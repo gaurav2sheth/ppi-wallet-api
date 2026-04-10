@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "functions": {
+    "api/chat.js": {
+      "maxDuration": 60
+    },
+    "api/summarise-transactions.js": {
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    { "source": "/api/chat", "destination": "/api/chat" },
+    { "source": "/api/summarise-transactions", "destination": "/api/summarise-transactions" },
+    { "source": "/api/health", "destination": "/api/health" }
+  ]
+}

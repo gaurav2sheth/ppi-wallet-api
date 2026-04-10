@@ -1,0 +1,9 @@
+{
+  "name": "ppi-wallet-api",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.86.1"
+  }
+}
