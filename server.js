@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import Anthropic from '@anthropic-ai/sdk';
-import { handleChat } from '../mcp/chat-handler.js';
+import { handleChat } from './mcp/chat-handler.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
