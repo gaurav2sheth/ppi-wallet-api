@@ -36,11 +36,11 @@ const users = new Map([
     user_id: 'user_001',
     name: 'Gaurav Sheth',
     phone: '+91-9876543210',
-    balance_paise: 2361100n,   // ₹23,611.00
+    balance_paise: 23611n,     // ₹236.11 (matches wallet app)
     held_paise: 0n,
     kyc_tier: 'FULL',
     state: 'ACTIVE',
-    created_at: daysAgo(120),
+    created_at: daysAgo(90),
     last_activity_at: daysAgo(0),
   }],
   ['user_002', {
@@ -146,15 +146,18 @@ const users = new Map([
 
 // ── 40 Transactions across users and last 90 days ────────────────────────────
 const transactions = [
-  // user_001 — 8 transactions (including recurring Netflix)
-  { txn_id: 'txn_001', user_id: 'user_001', type: 'load', amount_paise: 1000000n, merchant: null, description: 'Wallet top-up via UPI', timestamp: daysAgo(1), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
-  { txn_id: 'txn_002', user_id: 'user_001', type: 'pay', amount_paise: 89900n, merchant: 'Swiggy', description: 'Food delivery - Swiggy', timestamp: daysAgo(2), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
-  { txn_id: 'txn_003', user_id: 'user_001', type: 'transfer', amount_paise: 500000n, merchant: null, description: 'P2P transfer to Priya Sharma', timestamp: daysAgo(3), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
-  { txn_id: 'txn_004', user_id: 'user_001', type: 'pay', amount_paise: 1200000n, merchant: 'Amazon', description: 'Online purchase - Amazon', timestamp: daysAgo(5), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
-  { txn_id: 'txn_005', user_id: 'user_001', type: 'load', amount_paise: 1500000n, merchant: null, description: 'Wallet top-up via Debit Card', timestamp: daysAgo(8), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
-  { txn_id: 'txn_006', user_id: 'user_001', type: 'pay', amount_paise: 45000n, merchant: 'Uber', description: 'Uber ride - Airport', timestamp: daysAgo(10), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
-  { txn_id: 'txn_021', user_id: 'user_001', type: 'pay', amount_paise: 64900n, merchant: 'Netflix', description: 'Netflix Premium - Monthly', timestamp: daysAgo(15), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
-  { txn_id: 'txn_022', user_id: 'user_001', type: 'pay', amount_paise: 64900n, merchant: 'Netflix', description: 'Netflix Premium - Monthly', timestamp: daysAgo(45), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
+  // user_001 (Gaurav Sheth) — 11 transactions matching wallet app seed data
+  { txn_id: 'txn_001', user_id: 'user_001', type: 'pay', amount_paise: 6500n, merchant: 'Uber', description: 'Uber Ride', timestamp: daysAgo(0), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
+  { txn_id: 'txn_002', user_id: 'user_001', type: 'transfer', amount_paise: 6700n, merchant: null, description: 'P2P transfer to Deviprasad Shukla', timestamp: daysAgo(0), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
+  { txn_id: 'txn_003', user_id: 'user_001', type: 'pay', amount_paise: 4500n, merchant: 'Swiggy', description: 'Swiggy Order', timestamp: daysAgo(1), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
+  { txn_id: 'txn_004', user_id: 'user_001', type: 'pay', amount_paise: 90000n, merchant: 'Shankari Restaurant', description: 'Shankari Restaurant', timestamp: daysAgo(1), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
+  { txn_id: 'txn_005', user_id: 'user_001', type: 'load', amount_paise: 545000n, merchant: null, description: 'P2P from Siddhartha Guha', timestamp: daysAgo(2), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
+  { txn_id: 'txn_006', user_id: 'user_001', type: 'pay', amount_paise: 3100n, merchant: 'Tea Stall', description: 'Tea Stall', timestamp: daysAgo(3), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
+  { txn_id: 'txn_042', user_id: 'user_001', type: 'load', amount_paise: 200000n, merchant: null, description: 'Wallet Top-up via UPI - HDFC Bank', timestamp: daysAgo(5), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
+  { txn_id: 'txn_043', user_id: 'user_001', type: 'pay', amount_paise: 76651n, merchant: 'Uber', description: 'Uber Trip', timestamp: daysAgo(7), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
+  { txn_id: 'txn_044', user_id: 'user_001', type: 'load', amount_paise: 76651n, merchant: null, description: 'Uber Refund', timestamp: daysAgo(7), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
+  { txn_id: 'txn_045', user_id: 'user_001', type: 'pay', amount_paise: 50000n, merchant: 'MSEB', description: 'Electricity Bill - MSEB', timestamp: daysAgo(10), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
+  { txn_id: 'txn_046', user_id: 'user_001', type: 'load', amount_paise: 500000n, merchant: null, description: 'Wallet Top-up via Debit Card', timestamp: daysAgo(15), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
 
   // user_002 — 6 transactions
   { txn_id: 'txn_007', user_id: 'user_002', type: 'load', amount_paise: 500000n, merchant: null, description: 'Wallet top-up via UPI', timestamp: daysAgo(1), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
@@ -254,6 +257,9 @@ const MERCHANT_CATEGORIES = {
   'Airtel': 'Utilities',
   'Apollo Pharmacy': 'Health',
   'Cred': 'Bill Payment',
+  'Shankari Restaurant': 'Food & Dining',
+  'Tea Stall': 'Food & Dining',
+  'MSEB': 'Utilities',
 };
 
 function getCategory(txn) {
