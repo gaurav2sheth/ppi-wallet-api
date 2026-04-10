@@ -21,15 +21,7 @@ app.use(express.json());
 
 // ── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
-  const key = process.env.ANTHROPIC_API_KEY || '';
-  res.json({
-    ok: true,
-    tools: 18,
-    version: '1.0.0',
-    api_key_set: !!key,
-    api_key_prefix: key ? key.substring(0, 10) + '...' : 'NOT SET',
-    api_key_length: key.length,
-  });
+  res.json({ ok: true, tools: 18, version: '1.0.0' });
 });
 
 // ── POST /api/chat ───────────────────────────────────────────────────────────
