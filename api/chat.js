@@ -1,4 +1,4 @@
-import { handleChat } from './chat-handler.js';
+import { handleChat } from './_lib/chat-handler.js';
 
 export default async function handler(req, res) {
   // CORS
