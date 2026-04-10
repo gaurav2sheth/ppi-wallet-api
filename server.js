@@ -27,7 +27,7 @@ app.get('/health', (_req, res) => {
 // ── POST /api/chat ───────────────────────────────────────────────────────────
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message, context } = req.body;
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ error: 'Message is required' });
     }
@@ -38,7 +38,7 @@ app.post('/api/chat', async (req, res) => {
     }
 
     const role = req.query.role === 'admin' ? 'admin' : 'user';
-    const reply = await handleChat(message, apiKey, role);
+    const reply = await handleChat(message, apiKey, role, context);
     res.json({ reply });
   } catch (err) {
     console.error('[Chat] Error:', err?.message || err);
