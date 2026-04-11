@@ -294,6 +294,43 @@ const transactions = [
   { txn_id: 'txn_041', user_id: 'user_010', type: 'pay', amount_paise: 350000n, merchant: 'IRCTC', description: 'Train ticket - IRCTC Mumbai to Pune', timestamp: daysAgo(8), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
 ];
 
+// ── Disputes ─────────────────────────────────────────────────────────────────
+let nextDisputeId = 1;
+const disputes = [
+  { dispute_id: 'DSP-001', user_id: 'user_002', txn_id: 'txn_011', type: 'failed_transaction', description: 'Zomato payment failed but amount deducted', status: 'open', created_at: daysAgo(5), resolved_at: null, resolution: null },
+  { dispute_id: 'DSP-002', user_id: 'user_004', txn_id: 'txn_017', type: 'unauthorized', description: 'Did not authorize this P2P transfer', status: 'under_review', created_at: daysAgo(10), resolved_at: null, resolution: null },
+  { dispute_id: 'DSP-003', user_id: 'user_003', txn_id: 'txn_015', type: 'failed_transaction', description: 'P2P transfer to Vikram failed, money not returned', status: 'resolved', created_at: daysAgo(12), resolved_at: daysAgo(8), resolution: 'Amount refunded to wallet' },
+];
+nextDisputeId = 4;
+
+// ── Refunds ──────────────────────────────────────────────────────────────────
+let nextRefundId = 1;
+const refunds = [
+  { refund_id: 'RFD-001', user_id: 'user_001', txn_id: 'txn_043', amount_paise: 76651n, reason: 'Uber ride cancelled', status: 'completed', created_at: daysAgo(7), completed_at: daysAgo(7) },
+  { refund_id: 'RFD-002', user_id: 'user_003', txn_id: 'txn_015', amount_paise: 300000n, reason: 'Failed P2P — auto refund', status: 'completed', created_at: daysAgo(12), completed_at: daysAgo(8) },
+  { refund_id: 'RFD-003', user_id: 'user_002', txn_id: 'txn_011', amount_paise: 75000n, reason: 'Zomato order failed', status: 'pending', created_at: daysAgo(5), completed_at: null },
+];
+nextRefundId = 4;
+
+// ── Notifications ────────────────────────────────────────────────────────────
+let nextNotifId = 1;
+const notifications = [
+  { notif_id: 'NTF-001', user_id: 'user_001', type: 'transaction', title: 'Payment Successful', message: 'Paid ₹65.00 to Uber', read: false, created_at: daysAgo(0) },
+  { notif_id: 'NTF-002', user_id: 'user_001', type: 'transaction', title: 'Money Received', message: 'Received ₹5,450.00 from Siddhartha Guha', read: false, created_at: daysAgo(2) },
+  { notif_id: 'NTF-003', user_id: 'user_001', type: 'low_balance', title: 'Low Balance Alert', message: 'Your wallet balance is below ₹500. Top up now!', read: true, created_at: daysAgo(3) },
+  { notif_id: 'NTF-004', user_id: 'user_002', type: 'transaction', title: 'Payment Failed', message: 'Zomato payment of ₹750.00 failed', read: false, created_at: daysAgo(12) },
+  { notif_id: 'NTF-005', user_id: 'user_005', type: 'account', title: 'Account Suspended', message: 'Your account has been suspended due to KYC non-compliance', read: true, created_at: daysAgo(30) },
+  { notif_id: 'NTF-006', user_id: 'user_007', type: 'kyc', title: 'KYC Upgrade Pending', message: 'Your Full KYC verification is under review', read: false, created_at: daysAgo(3) },
+  { notif_id: 'NTF-007', user_id: 'user_001', type: 'promotion', title: 'Cashback Offer', message: 'Get 10% cashback on your next 3 transactions', read: false, created_at: daysAgo(1) },
+];
+nextNotifId = 8;
+
+// ── Alert Thresholds ─────────────────────────────────────────────────────────
+const alertThresholds = new Map([
+  ['user_001', { low_balance: 50000, high_transaction: 500000, daily_spend: 1000000 }],
+  ['user_002', { low_balance: 100000, high_transaction: 1000000, daily_spend: 2000000 }],
+]);
+
 // ── Data Access Functions ─────────────────────────────────────────────────────
 
 export function getWalletBalance(userId) {
@@ -354,8 +391,8 @@ function getCategory(txn) {
 
 // ── RBI PPI Limits by KYC Tier ───────────────────────────────────────────────
 const KYC_LIMITS = {
-  MINIMUM: { daily: 1000000, monthly: 1000000, max_balance: 1000000, label: 'Minimum KYC (₹10,000)' },
-  FULL:    { daily: 10000000, monthly: 20000000, max_balance: 20000000, label: 'Full KYC (₹2,00,000)' },
+  MINIMUM: { daily: 1000000, monthly: 1000000, max_balance: 1000000, p2p_monthly: 1000000, label: 'Minimum KYC (₹10,000)' },
+  FULL:    { daily: 10000000, monthly: 20000000, max_balance: 20000000, p2p_monthly: 10000000, label: 'Full KYC (₹2,00,000)' },
 };
 
 /**
@@ -1433,6 +1470,721 @@ export function getKycStats() {
     suspended_count: suspendedKyc.length,
     expiring_wallets: expiringWallets,
     avg_verification_minutes: 12,  // simulated
+    generated_at: formatIST(now().toISOString()),
+  };
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// NEW WALLET FEATURES
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ── Transaction Operations ───────────────────────────────────────────────────
+
+export function addMoney(userId, { amount_paise, source = 'UPI' } = {}) {
+  const user = users.get(userId);
+  if (!user) return { error: 'User not found', user_id: userId };
+  if (user.state === 'SUSPENDED') return { error: 'Account suspended — cannot add money', user_id: userId };
+
+  const amtBig = BigInt(amount_paise);
+  if (amtBig <= 0n) return { error: 'Amount must be positive' };
+
+  const limits = KYC_LIMITS[user.kyc_tier] ?? KYC_LIMITS.MINIMUM;
+  const newBalance = user.balance_paise + amtBig;
+  if (Number(newBalance) > limits.max_balance) {
+    return { error: `Would exceed ${user.kyc_tier} KYC max balance of ₹${(limits.max_balance / 100).toFixed(2)}`, current_balance: `₹${paisaToRupees(user.balance_paise)}`, max_allowed: `₹${(limits.max_balance / 100).toFixed(2)}` };
+  }
+
+  const txnId = `txn_${String(transactions.length + 100).padStart(3, '0')}`;
+  const txn = { txn_id: txnId, user_id: userId, type: 'load', amount_paise: amtBig, merchant: null, description: `Wallet Top-up via ${source}`, timestamp: now().toISOString(), status: 'success', flagged: false, flag_reason: null, flagged_at: null };
+  transactions.push(txn);
+
+  user.balance_paise = newBalance;
+  user.annual_load_ytd_paise += amtBig;
+  user.last_activity_at = now().toISOString();
+
+  return {
+    success: true,
+    txn_id: txnId,
+    user_id: userId,
+    name: user.name,
+    amount_added: `₹${paisaToRupees(amtBig)}`,
+    source,
+    new_balance: `₹${paisaToRupees(user.balance_paise)}`,
+    timestamp: formatIST(now().toISOString()),
+  };
+}
+
+export function payMerchant(userId, { amount_paise, merchant_name, description } = {}) {
+  const user = users.get(userId);
+  if (!user) return { error: 'User not found', user_id: userId };
+  if (user.state === 'SUSPENDED') return { error: 'Account suspended — cannot make payments', user_id: userId };
+
+  const amtBig = BigInt(amount_paise);
+  if (amtBig <= 0n) return { error: 'Amount must be positive' };
+  if (user.balance_paise < amtBig) {
+    return { error: 'Insufficient balance', current_balance: `₹${paisaToRupees(user.balance_paise)}`, required: `₹${paisaToRupees(amtBig)}` };
+  }
+
+  const txnId = `txn_${String(transactions.length + 100).padStart(3, '0')}`;
+  const txn = { txn_id: txnId, user_id: userId, type: 'pay', amount_paise: amtBig, merchant: merchant_name, description: description || `Payment to ${merchant_name}`, timestamp: now().toISOString(), status: 'success', flagged: false, flag_reason: null, flagged_at: null };
+  transactions.push(txn);
+
+  user.balance_paise -= amtBig;
+  user.last_activity_at = now().toISOString();
+
+  return {
+    success: true,
+    txn_id: txnId,
+    user_id: userId,
+    name: user.name,
+    amount_paid: `₹${paisaToRupees(amtBig)}`,
+    merchant: merchant_name,
+    description: txn.description,
+    new_balance: `₹${paisaToRupees(user.balance_paise)}`,
+    timestamp: formatIST(now().toISOString()),
+  };
+}
+
+export function transferP2P(userId, { amount_paise, recipient_id, note } = {}) {
+  const sender = users.get(userId);
+  if (!sender) return { error: 'Sender not found', user_id: userId };
+  if (sender.state === 'SUSPENDED') return { error: 'Sender account suspended', user_id: userId };
+
+  const recipient = users.get(recipient_id);
+  if (!recipient) return { error: 'Recipient not found', recipient_id };
+  if (recipient.state === 'SUSPENDED') return { error: 'Recipient account suspended', recipient_id };
+  if (userId === recipient_id) return { error: 'Cannot transfer to yourself' };
+
+  const amtBig = BigInt(amount_paise);
+  if (amtBig <= 0n) return { error: 'Amount must be positive' };
+  if (sender.balance_paise < amtBig) {
+    return { error: 'Insufficient balance', current_balance: `₹${paisaToRupees(sender.balance_paise)}`, required: `₹${paisaToRupees(amtBig)}` };
+  }
+
+  const limits = KYC_LIMITS[sender.kyc_tier] ?? KYC_LIMITS.MINIMUM;
+  if (Number(sender.monthly_p2p_mtd_paise + amtBig) > limits.p2p_monthly) {
+    return { error: `Would exceed monthly P2P limit of ₹${(limits.p2p_monthly / 100).toFixed(2)}`, current_p2p_mtd: `₹${paisaToRupees(sender.monthly_p2p_mtd_paise)}`, limit: `₹${(limits.p2p_monthly / 100).toFixed(2)}` };
+  }
+
+  const debitTxnId = `txn_${String(transactions.length + 100).padStart(3, '0')}`;
+  const creditTxnId = `txn_${String(transactions.length + 101).padStart(3, '0')}`;
+
+  transactions.push({ txn_id: debitTxnId, user_id: userId, type: 'transfer', amount_paise: amtBig, merchant: null, description: note || `P2P transfer to ${recipient.name}`, timestamp: now().toISOString(), status: 'success', flagged: false, flag_reason: null, flagged_at: null });
+  transactions.push({ txn_id: creditTxnId, user_id: recipient_id, type: 'load', amount_paise: amtBig, merchant: null, description: `P2P from ${sender.name}`, timestamp: now().toISOString(), status: 'success', flagged: false, flag_reason: null, flagged_at: null });
+
+  sender.balance_paise -= amtBig;
+  recipient.balance_paise += amtBig;
+  sender.monthly_p2p_mtd_paise += amtBig;
+  sender.last_activity_at = now().toISOString();
+  recipient.last_activity_at = now().toISOString();
+
+  return {
+    success: true,
+    debit_txn_id: debitTxnId,
+    credit_txn_id: creditTxnId,
+    sender: { user_id: userId, name: sender.name, new_balance: `₹${paisaToRupees(sender.balance_paise)}` },
+    recipient: { user_id: recipient_id, name: recipient.name, new_balance: `₹${paisaToRupees(recipient.balance_paise)}` },
+    amount: `₹${paisaToRupees(amtBig)}`,
+    note: note || null,
+    timestamp: formatIST(now().toISOString()),
+  };
+}
+
+export function payBill(userId, { amount_paise, biller_name, bill_number, category = 'Utilities' } = {}) {
+  const user = users.get(userId);
+  if (!user) return { error: 'User not found', user_id: userId };
+  if (user.state === 'SUSPENDED') return { error: 'Account suspended — cannot pay bills', user_id: userId };
+
+  const amtBig = BigInt(amount_paise);
+  if (amtBig <= 0n) return { error: 'Amount must be positive' };
+  if (user.balance_paise < amtBig) {
+    return { error: 'Insufficient balance', current_balance: `₹${paisaToRupees(user.balance_paise)}`, required: `₹${paisaToRupees(amtBig)}` };
+  }
+
+  const txnId = `txn_${String(transactions.length + 100).padStart(3, '0')}`;
+  const desc = bill_number ? `${biller_name} - Bill #${bill_number}` : `${biller_name} Bill Payment`;
+  const txn = { txn_id: txnId, user_id: userId, type: 'pay', amount_paise: amtBig, merchant: biller_name, description: desc, timestamp: now().toISOString(), status: 'success', flagged: false, flag_reason: null, flagged_at: null };
+  transactions.push(txn);
+
+  user.balance_paise -= amtBig;
+  user.last_activity_at = now().toISOString();
+
+  return {
+    success: true,
+    txn_id: txnId,
+    user_id: userId,
+    name: user.name,
+    amount_paid: `₹${paisaToRupees(amtBig)}`,
+    biller: biller_name,
+    bill_number: bill_number || null,
+    category,
+    new_balance: `₹${paisaToRupees(user.balance_paise)}`,
+    timestamp: formatIST(now().toISOString()),
+  };
+}
+
+export function requestRefund(userId, { txn_id, reason } = {}) {
+  const user = users.get(userId);
+  if (!user) return { error: 'User not found', user_id: userId };
+
+  const txn = transactions.find(t => t.txn_id === txn_id && t.user_id === userId);
+  if (!txn) return { error: 'Transaction not found for this user', txn_id };
+  if (txn.type === 'load') return { error: 'Cannot refund a wallet top-up', txn_id };
+
+  const existing = refunds.find(r => r.txn_id === txn_id && r.status !== 'rejected');
+  if (existing) return { error: 'Refund already requested for this transaction', existing_refund_id: existing.refund_id, status: existing.status };
+
+  const refundId = `RFD-${String(nextRefundId++).padStart(3, '0')}`;
+  const refund = { refund_id: refundId, user_id: userId, txn_id, amount_paise: txn.amount_paise, reason, status: 'pending', created_at: now().toISOString(), completed_at: null };
+  refunds.push(refund);
+
+  return {
+    success: true,
+    refund_id: refundId,
+    user_id: userId,
+    name: user.name,
+    txn_id,
+    original_amount: `₹${paisaToRupees(txn.amount_paise)}`,
+    reason,
+    status: 'pending',
+    estimated_completion: '3-5 business days',
+    created_at: formatIST(now().toISOString()),
+  };
+}
+
+// ── Limits & Compliance ──────────────────────────────────────────────────────
+
+export function checkLimits(userId) {
+  const user = users.get(userId);
+  if (!user) return { error: 'User not found', user_id: userId };
+
+  const limits = KYC_LIMITS[user.kyc_tier] ?? KYC_LIMITS.MINIMUM;
+
+  // Calculate today's spend
+  const todayStart = new Date(now());
+  todayStart.setHours(0, 0, 0, 0);
+  const todayTxns = transactions.filter(t => t.user_id === userId && t.type !== 'load' && new Date(t.timestamp) >= todayStart);
+  const dailySpentPaise = todayTxns.reduce((s, t) => s + Number(t.amount_paise), 0);
+
+  // Calculate this month's spend
+  const monthStart = new Date(now());
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const monthTxns = transactions.filter(t => t.user_id === userId && t.type !== 'load' && new Date(t.timestamp) >= monthStart);
+  const monthlySpentPaise = monthTxns.reduce((s, t) => s + Number(t.amount_paise), 0);
+
+  return {
+    user_id: userId,
+    name: user.name,
+    kyc_tier: user.kyc_tier,
+    limits: {
+      daily: { limit: `₹${(limits.daily / 100).toFixed(2)}`, used: `₹${(dailySpentPaise / 100).toFixed(2)}`, remaining: `₹${(Math.max(0, limits.daily - dailySpentPaise) / 100).toFixed(2)}`, utilization: `${((dailySpentPaise / limits.daily) * 100).toFixed(1)}%` },
+      monthly: { limit: `₹${(limits.monthly / 100).toFixed(2)}`, used: `₹${(monthlySpentPaise / 100).toFixed(2)}`, remaining: `₹${(Math.max(0, limits.monthly - monthlySpentPaise) / 100).toFixed(2)}`, utilization: `${((monthlySpentPaise / limits.monthly) * 100).toFixed(1)}%` },
+      max_balance: { limit: `₹${(limits.max_balance / 100).toFixed(2)}`, current: `₹${paisaToRupees(user.balance_paise)}`, utilization: `${((Number(user.balance_paise) / limits.max_balance) * 100).toFixed(1)}%` },
+      p2p_monthly: { limit: `₹${(limits.p2p_monthly / 100).toFixed(2)}`, used: `₹${paisaToRupees(user.monthly_p2p_mtd_paise)}`, remaining: `₹${((limits.p2p_monthly - Number(user.monthly_p2p_mtd_paise)) / 100).toFixed(2)}`, utilization: `${((Number(user.monthly_p2p_mtd_paise) / limits.p2p_monthly) * 100).toFixed(1)}%` },
+    },
+    warnings: [
+      ...(dailySpentPaise >= limits.daily * 0.8 ? [`Daily limit ${((dailySpentPaise / limits.daily) * 100).toFixed(0)}% utilized`] : []),
+      ...(monthlySpentPaise >= limits.monthly * 0.8 ? [`Monthly limit ${((monthlySpentPaise / limits.monthly) * 100).toFixed(0)}% utilized`] : []),
+      ...(Number(user.balance_paise) >= limits.max_balance * 0.8 ? [`Balance at ${((Number(user.balance_paise) / limits.max_balance) * 100).toFixed(0)}% of max`] : []),
+    ],
+    generated_at: formatIST(now().toISOString()),
+  };
+}
+
+export function checkCompliance(userId) {
+  const user = users.get(userId);
+  if (!user) return { error: 'User not found', user_id: userId };
+
+  const limits = KYC_LIMITS[user.kyc_tier] ?? KYC_LIMITS.MINIMUM;
+  const issues = [];
+  const warnings = [];
+
+  // Balance check
+  if (Number(user.balance_paise) > limits.max_balance) {
+    issues.push({ type: 'BALANCE_EXCEEDS_LIMIT', severity: 'critical', detail: `Balance ₹${paisaToRupees(user.balance_paise)} exceeds ${user.kyc_tier} limit of ₹${(limits.max_balance / 100).toFixed(2)}` });
+  }
+
+  // KYC state checks
+  if (user.kyc_state === 'REJECTED') {
+    issues.push({ type: 'KYC_REJECTED', severity: 'critical', detail: `KYC rejected: ${user.rejected_reason}` });
+  }
+  if (user.kyc_state === 'SUSPENDED') {
+    issues.push({ type: 'KYC_SUSPENDED', severity: 'critical', detail: 'KYC suspended due to non-compliance' });
+  }
+  if (user.kyc_state === 'MIN_KYC' && user.wallet_expiry_date) {
+    const daysToExpiry = Math.ceil((new Date(user.wallet_expiry_date).getTime() - now().getTime()) / 86400000);
+    if (daysToExpiry < 30) {
+      warnings.push({ type: 'WALLET_EXPIRING_SOON', detail: `Minimum KYC wallet expires in ${daysToExpiry} days. Upgrade to Full KYC required.` });
+    }
+  }
+
+  // P2P limit check
+  if (Number(user.monthly_p2p_mtd_paise) > limits.p2p_monthly * 0.9) {
+    warnings.push({ type: 'P2P_LIMIT_NEAR', detail: `P2P usage at ${((Number(user.monthly_p2p_mtd_paise) / limits.p2p_monthly) * 100).toFixed(0)}% of monthly limit` });
+  }
+
+  // Flagged transactions
+  const flaggedTxns = transactions.filter(t => t.user_id === userId && t.flagged);
+  if (flaggedTxns.length > 0) {
+    warnings.push({ type: 'FLAGGED_TRANSACTIONS', detail: `${flaggedTxns.length} transaction(s) flagged for review` });
+  }
+
+  // Aadhaar check for FULL KYC
+  if (user.kyc_tier === 'FULL' && !user.aadhaar_verified) {
+    issues.push({ type: 'AADHAAR_NOT_VERIFIED', severity: 'high', detail: 'Full KYC account without Aadhaar verification' });
+  }
+
+  const isCompliant = issues.length === 0;
+
+  return {
+    user_id: userId,
+    name: user.name,
+    kyc_tier: user.kyc_tier,
+    kyc_state: user.kyc_state,
+    is_compliant: isCompliant,
+    compliance_status: isCompliant ? (warnings.length > 0 ? 'COMPLIANT_WITH_WARNINGS' : 'FULLY_COMPLIANT') : 'NON_COMPLIANT',
+    issues,
+    warnings,
+    recommendation: !isCompliant ? 'Immediate action required to resolve compliance issues.' : warnings.length > 0 ? 'Address warnings to maintain compliance.' : 'Account fully compliant with RBI PPI regulations.',
+    checked_at: formatIST(now().toISOString()),
+  };
+}
+
+// ── Disputes & Support ───────────────────────────────────────────────────────
+
+export function raiseDispute(userId, { txn_id, type = 'failed_transaction', description } = {}) {
+  const user = users.get(userId);
+  if (!user) return { error: 'User not found', user_id: userId };
+
+  const txn = transactions.find(t => t.txn_id === txn_id && t.user_id === userId);
+  if (!txn) return { error: 'Transaction not found for this user', txn_id };
+
+  const existing = disputes.find(d => d.txn_id === txn_id && d.user_id === userId && d.status !== 'resolved' && d.status !== 'rejected');
+  if (existing) return { error: 'Active dispute already exists for this transaction', existing_dispute_id: existing.dispute_id, status: existing.status };
+
+  const disputeId = `DSP-${String(nextDisputeId++).padStart(3, '0')}`;
+  const dispute = { dispute_id: disputeId, user_id: userId, txn_id, type, description, status: 'open', created_at: now().toISOString(), resolved_at: null, resolution: null };
+  disputes.push(dispute);
+
+  return {
+    success: true,
+    dispute_id: disputeId,
+    user_id: userId,
+    name: user.name,
+    txn_id,
+    original_amount: `₹${paisaToRupees(txn.amount_paise)}`,
+    type,
+    description,
+    status: 'open',
+    estimated_resolution: '5-7 business days',
+    created_at: formatIST(now().toISOString()),
+  };
+}
+
+export function getDisputeStatus(userId, { dispute_id } = {}) {
+  const user = users.get(userId);
+  if (!user) return { error: 'User not found', user_id: userId };
+
+  if (dispute_id) {
+    const d = disputes.find(d => d.dispute_id === dispute_id && d.user_id === userId);
+    if (!d) return { error: 'Dispute not found', dispute_id };
+
+    const txn = transactions.find(t => t.txn_id === d.txn_id);
+    return {
+      dispute_id: d.dispute_id,
+      user_id: userId,
+      name: user.name,
+      txn_id: d.txn_id,
+      transaction_amount: txn ? `₹${paisaToRupees(txn.amount_paise)}` : 'N/A',
+      type: d.type,
+      description: d.description,
+      status: d.status,
+      created_at: formatIST(d.created_at),
+      resolved_at: d.resolved_at ? formatIST(d.resolved_at) : null,
+      resolution: d.resolution,
+    };
+  }
+
+  // List all disputes for user
+  const userDisputes = disputes.filter(d => d.user_id === userId).map(d => {
+    const txn = transactions.find(t => t.txn_id === d.txn_id);
+    return {
+      dispute_id: d.dispute_id,
+      txn_id: d.txn_id,
+      transaction_amount: txn ? `₹${paisaToRupees(txn.amount_paise)}` : 'N/A',
+      type: d.type,
+      status: d.status,
+      created_at: formatIST(d.created_at),
+      resolution: d.resolution,
+    };
+  });
+
+  return {
+    user_id: userId,
+    name: user.name,
+    total_disputes: userDisputes.length,
+    open: userDisputes.filter(d => d.status === 'open' || d.status === 'under_review').length,
+    resolved: userDisputes.filter(d => d.status === 'resolved').length,
+    disputes: userDisputes,
+  };
+}
+
+export function getRefundStatus(userId, { refund_id } = {}) {
+  const user = users.get(userId);
+  if (!user) return { error: 'User not found', user_id: userId };
+
+  if (refund_id) {
+    const r = refunds.find(r => r.refund_id === refund_id && r.user_id === userId);
+    if (!r) return { error: 'Refund not found', refund_id };
+
+    return {
+      refund_id: r.refund_id,
+      user_id: userId,
+      name: user.name,
+      txn_id: r.txn_id,
+      amount: `₹${paisaToRupees(r.amount_paise)}`,
+      reason: r.reason,
+      status: r.status,
+      created_at: formatIST(r.created_at),
+      completed_at: r.completed_at ? formatIST(r.completed_at) : null,
+    };
+  }
+
+  // List all refunds for user
+  const userRefunds = refunds.filter(r => r.user_id === userId).map(r => ({
+    refund_id: r.refund_id,
+    txn_id: r.txn_id,
+    amount: `₹${paisaToRupees(r.amount_paise)}`,
+    reason: r.reason,
+    status: r.status,
+    created_at: formatIST(r.created_at),
+    completed_at: r.completed_at ? formatIST(r.completed_at) : null,
+  }));
+
+  return {
+    user_id: userId,
+    name: user.name,
+    total_refunds: userRefunds.length,
+    pending: userRefunds.filter(r => r.status === 'pending').length,
+    completed: userRefunds.filter(r => r.status === 'completed').length,
+    refunds: userRefunds,
+  };
+}
+
+// ── Notifications ────────────────────────────────────────────────────────────
+
+export function getNotifications(userId, { unread_only = false, limit = 20 } = {}) {
+  const user = users.get(userId);
+  if (!user) return { error: 'User not found', user_id: userId };
+
+  let userNotifs = notifications
+    .filter(n => n.user_id === userId)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  const totalCount = userNotifs.length;
+  const unreadCount = userNotifs.filter(n => !n.read).length;
+
+  if (unread_only) {
+    userNotifs = userNotifs.filter(n => !n.read);
+  }
+
+  userNotifs = userNotifs.slice(0, limit);
+
+  return {
+    user_id: userId,
+    name: user.name,
+    total_notifications: totalCount,
+    unread_count: unreadCount,
+    showing: userNotifs.length,
+    notifications: userNotifs.map(n => ({
+      notif_id: n.notif_id,
+      type: n.type,
+      title: n.title,
+      message: n.message,
+      read: n.read,
+      created_at: formatIST(n.created_at),
+    })),
+  };
+}
+
+export function setAlertThreshold(userId, { low_balance, high_transaction, daily_spend } = {}) {
+  const user = users.get(userId);
+  if (!user) return { error: 'User not found', user_id: userId };
+
+  const current = alertThresholds.get(userId) || { low_balance: 50000, high_transaction: 500000, daily_spend: 1000000 };
+
+  if (low_balance !== undefined) current.low_balance = Math.round(low_balance * 100);
+  if (high_transaction !== undefined) current.high_transaction = Math.round(high_transaction * 100);
+  if (daily_spend !== undefined) current.daily_spend = Math.round(daily_spend * 100);
+
+  alertThresholds.set(userId, current);
+
+  return {
+    success: true,
+    user_id: userId,
+    name: user.name,
+    thresholds: {
+      low_balance: `₹${(current.low_balance / 100).toFixed(2)}`,
+      high_transaction: `₹${(current.high_transaction / 100).toFixed(2)}`,
+      daily_spend: `₹${(current.daily_spend / 100).toFixed(2)}`,
+    },
+    updated_at: formatIST(now().toISOString()),
+  };
+}
+
+// ── KYC Actions (Admin) ──────────────────────────────────────────────────────
+
+export function approveKyc(userId, { admin_notes } = {}) {
+  const user = users.get(userId);
+  if (!user) return { error: 'User not found', user_id: userId };
+
+  if (user.kyc_state !== 'FULL_KYC_PENDING') {
+    return { error: `Cannot approve — current KYC state is ${user.kyc_state}. Only FULL_KYC_PENDING can be approved.`, user_id: userId, current_state: user.kyc_state };
+  }
+
+  const previousState = user.kyc_state;
+  user.kyc_state = 'FULL_KYC';
+  user.kyc_tier = 'FULL';
+  user.wallet_expiry_date = null;
+  user.ckyc_number = `CKYC-${Date.now().toString().slice(-8)}`;
+
+  return {
+    success: true,
+    user_id: userId,
+    name: user.name,
+    previous_kyc_state: previousState,
+    new_kyc_state: user.kyc_state,
+    new_kyc_tier: user.kyc_tier,
+    ckyc_number: user.ckyc_number,
+    admin_notes: admin_notes || null,
+    approved_by: 'admin-claude',
+    approved_at: formatIST(now().toISOString()),
+  };
+}
+
+export function rejectKyc(userId, { reason } = {}) {
+  const user = users.get(userId);
+  if (!user) return { error: 'User not found', user_id: userId };
+
+  if (user.kyc_state !== 'FULL_KYC_PENDING') {
+    return { error: `Cannot reject — current KYC state is ${user.kyc_state}. Only FULL_KYC_PENDING can be rejected.`, user_id: userId, current_state: user.kyc_state };
+  }
+
+  const previousState = user.kyc_state;
+  user.kyc_state = 'REJECTED';
+  user.rejected_reason = reason;
+
+  return {
+    success: true,
+    user_id: userId,
+    name: user.name,
+    previous_kyc_state: previousState,
+    new_kyc_state: user.kyc_state,
+    reason,
+    rejected_by: 'admin-claude',
+    rejected_at: formatIST(now().toISOString()),
+  };
+}
+
+export function requestKycUpgrade(userId) {
+  const user = users.get(userId);
+  if (!user) return { error: 'User not found', user_id: userId };
+
+  if (user.kyc_state === 'FULL_KYC') {
+    return { error: 'Already at Full KYC', user_id: userId, current_state: user.kyc_state };
+  }
+  if (user.kyc_state === 'FULL_KYC_PENDING') {
+    return { error: 'KYC upgrade already pending', user_id: userId, current_state: user.kyc_state };
+  }
+  if (user.kyc_state === 'SUSPENDED') {
+    return { error: 'Cannot upgrade — KYC is suspended', user_id: userId };
+  }
+
+  const previousState = user.kyc_state;
+  user.kyc_state = 'FULL_KYC_PENDING';
+  user.aadhaar_verified = true;
+  user.last_activity_at = now().toISOString();
+
+  // Add notification
+  const notifId = `NTF-${String(nextNotifId++).padStart(3, '0')}`;
+  notifications.push({ notif_id: notifId, user_id: userId, type: 'kyc', title: 'KYC Upgrade Requested', message: 'Your Full KYC verification request has been submitted. You will be notified once reviewed.', read: false, created_at: now().toISOString() });
+
+  return {
+    success: true,
+    user_id: userId,
+    name: user.name,
+    previous_kyc_state: previousState,
+    new_kyc_state: user.kyc_state,
+    documents_required: ['Aadhaar (verified)', 'PAN Card', 'Video KYC'],
+    estimated_processing: '24-48 hours',
+    submitted_at: formatIST(now().toISOString()),
+  };
+}
+
+// ── Analytics ────────────────────────────────────────────────────────────────
+
+export function getMerchantInsights(userId, { days = 30, top_n = 10 } = {}) {
+  const user = users.get(userId);
+  if (!user) return { error: 'User not found', user_id: userId };
+
+  const cutoff = new Date(now());
+  cutoff.setDate(cutoff.getDate() - days);
+
+  const userTxns = transactions
+    .filter(t => t.user_id === userId && t.type === 'pay' && new Date(t.timestamp) >= cutoff && t.status === 'success');
+
+  const merchantMap = {};
+  for (const t of userTxns) {
+    const name = t.merchant || 'Unknown';
+    if (!merchantMap[name]) merchantMap[name] = { total_paise: 0, count: 0, category: getCategory(t), last_visit: t.timestamp };
+    merchantMap[name].total_paise += Number(t.amount_paise);
+    merchantMap[name].count++;
+    if (new Date(t.timestamp) > new Date(merchantMap[name].last_visit)) merchantMap[name].last_visit = t.timestamp;
+  }
+
+  const sorted = Object.entries(merchantMap)
+    .map(([name, data]) => ({
+      merchant: name,
+      category: data.category,
+      total_spent: `₹${(data.total_paise / 100).toFixed(2)}`,
+      total_paise: data.total_paise,
+      transaction_count: data.count,
+      avg_transaction: `₹${((data.total_paise / data.count) / 100).toFixed(2)}`,
+      last_visit: formatIST(data.last_visit),
+    }))
+    .sort((a, b) => b.total_paise - a.total_paise)
+    .slice(0, top_n);
+
+  const totalSpent = sorted.reduce((s, m) => s + m.total_paise, 0);
+
+  return {
+    user_id: userId,
+    name: user.name,
+    period: `Last ${days} days`,
+    total_merchants: Object.keys(merchantMap).length,
+    top_merchants: sorted.map(({ total_paise, ...rest }) => ({
+      ...rest,
+      percentage: totalSpent > 0 ? `${((total_paise / totalSpent) * 100).toFixed(1)}%` : '0%',
+    })),
+    total_merchant_spend: `₹${(totalSpent / 100).toFixed(2)}`,
+  };
+}
+
+export function getPeakUsage({ days = 30 } = {}) {
+  const cutoff = new Date(now());
+  cutoff.setDate(cutoff.getDate() - days);
+
+  const recentTxns = transactions.filter(t => new Date(t.timestamp) >= cutoff);
+
+  // By hour
+  const hourly = new Array(24).fill(0);
+  const hourlyCount = new Array(24).fill(0);
+  for (const t of recentTxns) {
+    const h = new Date(t.timestamp).getHours();
+    hourly[h] += Number(t.amount_paise);
+    hourlyCount[h]++;
+  }
+
+  const peakHour = hourlyCount.indexOf(Math.max(...hourlyCount));
+  const quietHour = hourlyCount.indexOf(Math.min(...hourlyCount.filter(c => c >= 0)));
+
+  // By day of week
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const daily = new Array(7).fill(0);
+  const dailyCount = new Array(7).fill(0);
+  for (const t of recentTxns) {
+    const d = new Date(t.timestamp).getDay();
+    daily[d] += Number(t.amount_paise);
+    dailyCount[d]++;
+  }
+
+  const peakDay = dailyCount.indexOf(Math.max(...dailyCount));
+
+  // By transaction type
+  const typeBreakdown = {};
+  for (const t of recentTxns) {
+    if (!typeBreakdown[t.type]) typeBreakdown[t.type] = { count: 0, volume_paise: 0 };
+    typeBreakdown[t.type].count++;
+    typeBreakdown[t.type].volume_paise += Number(t.amount_paise);
+  }
+
+  return {
+    period: `Last ${days} days`,
+    total_transactions: recentTxns.length,
+    peak_hour: { hour: `${peakHour}:00 - ${peakHour + 1}:00`, transactions: hourlyCount[peakHour], volume: `₹${(hourly[peakHour] / 100).toFixed(2)}` },
+    quiet_hour: { hour: `${quietHour}:00 - ${quietHour + 1}:00`, transactions: hourlyCount[quietHour] },
+    peak_day: { day: dayNames[peakDay], transactions: dailyCount[peakDay], volume: `₹${(daily[peakDay] / 100).toFixed(2)}` },
+    hourly_distribution: hourlyCount.map((count, i) => ({ hour: `${i}:00`, transactions: count, volume: `₹${(hourly[i] / 100).toFixed(2)}` })).filter(h => h.transactions > 0),
+    type_breakdown: Object.entries(typeBreakdown).map(([type, data]) => ({ type, count: data.count, volume: `₹${(data.volume_paise / 100).toFixed(2)}` })),
+    generated_at: formatIST(now().toISOString()),
+  };
+}
+
+export function getMonthlyTrends({ months = 3 } = {}) {
+  const allUsers = Array.from(users.values());
+  const monthlyData = [];
+
+  for (let i = 0; i < months; i++) {
+    const monthEnd = new Date(now());
+    monthEnd.setMonth(monthEnd.getMonth() - i);
+    monthEnd.setDate(1);
+    if (i === 0) {
+      // Current month — use now() as end
+    } else {
+      monthEnd.setMonth(monthEnd.getMonth() + 1);
+      monthEnd.setDate(0); // last day of month
+    }
+
+    const monthStart = new Date(now());
+    monthStart.setMonth(monthStart.getMonth() - i);
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    const endDate = i === 0 ? now() : monthEnd;
+
+    const monthTxns = transactions.filter(t => new Date(t.timestamp) >= monthStart && new Date(t.timestamp) < endDate);
+
+    const debitTxns = monthTxns.filter(t => t.type !== 'load');
+    const creditTxns = monthTxns.filter(t => t.type === 'load');
+    const debitPaise = debitTxns.reduce((s, t) => s + Number(t.amount_paise), 0);
+    const creditPaise = creditTxns.reduce((s, t) => s + Number(t.amount_paise), 0);
+
+    const activeUsers = new Set(monthTxns.map(t => t.user_id)).size;
+    const failedCount = monthTxns.filter(t => t.status === 'failed').length;
+
+    const monthName = monthStart.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+
+    monthlyData.push({
+      month: monthName,
+      total_transactions: monthTxns.length,
+      total_debit: `₹${(debitPaise / 100).toFixed(2)}`,
+      total_credit: `₹${(creditPaise / 100).toFixed(2)}`,
+      net_flow: `${creditPaise >= debitPaise ? '+' : '-'}₹${(Math.abs(creditPaise - debitPaise) / 100).toFixed(2)}`,
+      active_users: activeUsers,
+      failed_transactions: failedCount,
+      avg_transaction_value: monthTxns.length > 0 ? `₹${(((debitPaise + creditPaise) / monthTxns.length) / 100).toFixed(2)}` : '₹0.00',
+    });
+  }
+
+  // Growth calculation
+  let growth = null;
+  if (monthlyData.length >= 2) {
+    const current = monthlyData[0];
+    const previous = monthlyData[1];
+    const currentTxns = current.total_transactions;
+    const prevTxns = previous.total_transactions;
+    growth = {
+      transaction_count_change: prevTxns > 0 ? `${(((currentTxns - prevTxns) / prevTxns) * 100).toFixed(1)}%` : 'N/A',
+      user_count_change: previous.active_users > 0 ? `${(((current.active_users - previous.active_users) / previous.active_users) * 100).toFixed(1)}%` : 'N/A',
+    };
+  }
+
+  return {
+    period: `Last ${months} months`,
+    total_users: allUsers.length,
+    months: monthlyData,
+    growth,
     generated_at: formatIST(now().toISOString()),
   };
 }

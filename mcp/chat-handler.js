@@ -23,6 +23,12 @@ import {
   detectRecurringPayments,
   compareUsers,
   generateReport,
+  addMoney, payMerchant, transferP2P, payBill, requestRefund,
+  checkLimits, checkCompliance,
+  raiseDispute, getDisputeStatus, getRefundStatus,
+  getNotifications, setAlertThreshold,
+  approveKyc, rejectKyc, requestKycUpgrade,
+  getMerchantInsights, getPeakUsage, getMonthlyTrends,
 } from './mock-data.js';
 
 // ── Tool definitions matching the MCP server schema ──────────────────────────
@@ -185,6 +191,232 @@ const TOOLS = [
       required: ['user_id'],
     },
   },
+  {
+    name: 'add_money',
+    description: 'Adds money to a user\'s wallet. Validates KYC balance limits. Use for "add money", "top up", "load wallet".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'string', description: 'Unique wallet user ID' },
+        amount_paise: { type: 'number', description: 'Amount in paise (e.g. 100000 for ₹1,000)' },
+        source: { type: 'string', description: 'Payment source (UPI, Debit Card, NEFT)', default: 'UPI' },
+      },
+      required: ['user_id', 'amount_paise'],
+    },
+  },
+  {
+    name: 'pay_merchant',
+    description: 'Makes a payment to a merchant from wallet. Checks balance. Use for "pay Swiggy ₹500", "make payment".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'string', description: 'Unique wallet user ID' },
+        amount_paise: { type: 'number', description: 'Payment amount in paise' },
+        merchant_name: { type: 'string', description: 'Merchant name' },
+        description: { type: 'string', description: 'Payment description' },
+      },
+      required: ['user_id', 'amount_paise', 'merchant_name'],
+    },
+  },
+  {
+    name: 'transfer_p2p',
+    description: 'Transfers money from one wallet user to another. Validates balance and P2P limits. Use for "send money to Priya", "transfer ₹1000".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'string', description: 'Sender wallet user ID' },
+        recipient_id: { type: 'string', description: 'Recipient wallet user ID' },
+        amount_paise: { type: 'number', description: 'Transfer amount in paise' },
+        note: { type: 'string', description: 'Optional transfer note' },
+      },
+      required: ['user_id', 'recipient_id', 'amount_paise'],
+    },
+  },
+  {
+    name: 'pay_bill',
+    description: 'Pays a bill (electricity, phone, etc.) from wallet. Use for "pay electricity bill", "pay my Jio recharge".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'string', description: 'Unique wallet user ID' },
+        amount_paise: { type: 'number', description: 'Bill amount in paise' },
+        biller_name: { type: 'string', description: 'Biller name (MSEB, Jio, Airtel)' },
+        bill_number: { type: 'string', description: 'Bill or account number' },
+        category: { type: 'string', description: 'Bill category', default: 'Utilities' },
+      },
+      required: ['user_id', 'amount_paise', 'biller_name'],
+    },
+  },
+  {
+    name: 'request_refund',
+    description: 'Initiates a refund for a transaction. Only debit transactions can be refunded. Use for "refund my payment", "I want a refund".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'string', description: 'Unique wallet user ID' },
+        txn_id: { type: 'string', description: 'Transaction ID to refund' },
+        reason: { type: 'string', description: 'Reason for refund' },
+      },
+      required: ['user_id', 'txn_id', 'reason'],
+    },
+  },
+  {
+    name: 'check_limits',
+    description: 'Shows real-time limit utilization: daily, monthly, balance, and P2P limits. Use for "what are my limits?", "how much can I spend?".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'string', description: 'Unique wallet user ID' },
+      },
+      required: ['user_id'],
+    },
+  },
+  {
+    name: 'check_compliance',
+    description: 'Runs RBI PPI compliance checks: balance limits, KYC state, Aadhaar, flagged transactions. Use for "is this user compliant?", "compliance check".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'string', description: 'Unique wallet user ID' },
+      },
+      required: ['user_id'],
+    },
+  },
+  {
+    name: 'raise_dispute',
+    description: 'Files a dispute for a transaction. Use for "dispute this transaction", "file a complaint".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'string', description: 'Unique wallet user ID' },
+        txn_id: { type: 'string', description: 'Transaction ID to dispute' },
+        type: { type: 'string', enum: ['failed_transaction', 'unauthorized', 'wrong_amount', 'merchant_issue', 'other'], description: 'Dispute type', default: 'failed_transaction' },
+        description: { type: 'string', description: 'Description of the issue' },
+      },
+      required: ['user_id', 'txn_id', 'description'],
+    },
+  },
+  {
+    name: 'get_dispute_status',
+    description: 'Gets dispute status or lists all disputes for a user. Use for "dispute status", "show my disputes".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'string', description: 'Unique wallet user ID' },
+        dispute_id: { type: 'string', description: 'Specific dispute ID (omit to list all)' },
+      },
+      required: ['user_id'],
+    },
+  },
+  {
+    name: 'get_refund_status',
+    description: 'Gets refund status or lists all refunds for a user. Use for "where is my refund?", "refund status".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'string', description: 'Unique wallet user ID' },
+        refund_id: { type: 'string', description: 'Specific refund ID (omit to list all)' },
+      },
+      required: ['user_id'],
+    },
+  },
+  {
+    name: 'get_notifications',
+    description: 'Retrieves notifications for a user. Use for "show notifications", "any alerts?", "unread messages".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'string', description: 'Unique wallet user ID' },
+        unread_only: { type: 'boolean', description: 'Show only unread notifications', default: false },
+        limit: { type: 'number', description: 'Max notifications to return', default: 20 },
+      },
+      required: ['user_id'],
+    },
+  },
+  {
+    name: 'set_alert_threshold',
+    description: 'Sets alert thresholds: low balance, high transaction, daily spend. Amounts in rupees. Use for "alert me when balance below ₹500".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'string', description: 'Unique wallet user ID' },
+        low_balance: { type: 'number', description: 'Low balance threshold in rupees' },
+        high_transaction: { type: 'number', description: 'High transaction alert in rupees' },
+        daily_spend: { type: 'number', description: 'Daily spend limit alert in rupees' },
+      },
+      required: ['user_id'],
+    },
+  },
+  {
+    name: 'approve_kyc',
+    description: 'Admin: Approves a pending Full KYC application. Only for FULL_KYC_PENDING users. Use for "approve KYC for user_007".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'string', description: 'User ID to approve' },
+        admin_notes: { type: 'string', description: 'Optional admin notes' },
+      },
+      required: ['user_id'],
+    },
+  },
+  {
+    name: 'reject_kyc',
+    description: 'Admin: Rejects a pending Full KYC application with reason. Only for FULL_KYC_PENDING users. Use for "reject KYC for user_007".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'string', description: 'User ID to reject' },
+        reason: { type: 'string', description: 'Rejection reason' },
+      },
+      required: ['user_id', 'reason'],
+    },
+  },
+  {
+    name: 'request_kyc_upgrade',
+    description: 'Initiates KYC upgrade from MIN_KYC to FULL_KYC. Use for "upgrade my KYC", "I want full KYC".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'string', description: 'User ID to upgrade' },
+      },
+      required: ['user_id'],
+    },
+  },
+  {
+    name: 'get_merchant_insights',
+    description: 'Analyzes top merchants by spending. Use for "where do I spend most?", "top merchants", "favorite shops".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        user_id: { type: 'string', description: 'Unique wallet user ID' },
+        days: { type: 'number', description: 'Past days to analyze', default: 30 },
+        top_n: { type: 'number', description: 'Number of top merchants', default: 10 },
+      },
+      required: ['user_id'],
+    },
+  },
+  {
+    name: 'get_peak_usage',
+    description: 'Platform-wide peak usage analysis: busiest hours, days, transaction types. Use for admin "peak usage", "busiest time".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        days: { type: 'number', description: 'Past days to analyze', default: 30 },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'get_monthly_trends',
+    description: 'Month-over-month platform trends: volumes, active users, growth. Use for admin "monthly growth", "trends".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        months: { type: 'number', description: 'Months to analyze', default: 3 },
+      },
+      required: [],
+    },
+  },
 ];
 
 // ── Execute a tool call against the mock data layer ──────────────────────────
@@ -261,6 +493,60 @@ function executeTool(name, input) {
         report_type: input.report_type ?? 'summary',
       });
       return result ?? { error: 'User not found', user_id: input.user_id };
+    }
+    case 'add_money': {
+      return addMoney(input.user_id, { amount_paise: input.amount_paise, source: input.source ?? 'UPI' });
+    }
+    case 'pay_merchant': {
+      return payMerchant(input.user_id, { amount_paise: input.amount_paise, merchant_name: input.merchant_name, description: input.description });
+    }
+    case 'transfer_p2p': {
+      return transferP2P(input.user_id, { amount_paise: input.amount_paise, recipient_id: input.recipient_id, note: input.note });
+    }
+    case 'pay_bill': {
+      return payBill(input.user_id, { amount_paise: input.amount_paise, biller_name: input.biller_name, bill_number: input.bill_number, category: input.category ?? 'Utilities' });
+    }
+    case 'request_refund': {
+      return requestRefund(input.user_id, { txn_id: input.txn_id, reason: input.reason });
+    }
+    case 'check_limits': {
+      return checkLimits(input.user_id);
+    }
+    case 'check_compliance': {
+      return checkCompliance(input.user_id);
+    }
+    case 'raise_dispute': {
+      return raiseDispute(input.user_id, { txn_id: input.txn_id, type: input.type ?? 'failed_transaction', description: input.description });
+    }
+    case 'get_dispute_status': {
+      return getDisputeStatus(input.user_id, { dispute_id: input.dispute_id });
+    }
+    case 'get_refund_status': {
+      return getRefundStatus(input.user_id, { refund_id: input.refund_id });
+    }
+    case 'get_notifications': {
+      return getNotifications(input.user_id, { unread_only: input.unread_only ?? false, limit: input.limit ?? 20 });
+    }
+    case 'set_alert_threshold': {
+      return setAlertThreshold(input.user_id, { low_balance: input.low_balance, high_transaction: input.high_transaction, daily_spend: input.daily_spend });
+    }
+    case 'approve_kyc': {
+      return approveKyc(input.user_id, { admin_notes: input.admin_notes });
+    }
+    case 'reject_kyc': {
+      return rejectKyc(input.user_id, { reason: input.reason });
+    }
+    case 'request_kyc_upgrade': {
+      return requestKycUpgrade(input.user_id);
+    }
+    case 'get_merchant_insights': {
+      return getMerchantInsights(input.user_id, { days: input.days ?? 30, top_n: input.top_n ?? 10 });
+    }
+    case 'get_peak_usage': {
+      return getPeakUsage({ days: input.days ?? 30 });
+    }
+    case 'get_monthly_trends': {
+      return getMonthlyTrends({ months: input.months ?? 3 });
     }
     default:
       return { error: `Unknown tool: ${name}` };
