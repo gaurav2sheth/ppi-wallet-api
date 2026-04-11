@@ -502,11 +502,11 @@ const alertThresholds = new Map([
 
 // ── Data Access Functions ─────────────────────────────────────────────────────
 
-export function getWalletBalance(userId) {
+export function getWalletBalance(userId, { include_runway = false, lookback_days = 30 } = {}) {
   const user = users.get(userId);
   if (!user) return null;
 
-  return {
+  const result = {
     user_id: user.user_id,
     name: user.name,
     balance: `₹${paisaToRupees(user.balance_paise)}`,
@@ -518,6 +518,42 @@ export function getWalletBalance(userId) {
     status: user.state,
     last_updated: formatIST(user.last_activity_at),
   };
+
+  // ABSORB: estimate_balance_runway → include_runway param
+  if (include_runway) {
+    const cutoff = new Date(now());
+    cutoff.setDate(cutoff.getDate() - lookback_days);
+    const debitTxns = transactions.filter(
+      t => t.user_id === userId && t.type !== 'load' && new Date(t.timestamp) >= cutoff
+    );
+    const totalSpentPaise = debitTxns.reduce((s, t) => s + Number(t.amount_paise), 0);
+    const avgDailySpend = totalSpentPaise / lookback_days;
+    const balancePaise = Number(user.balance_paise);
+    const daysRemaining = avgDailySpend > 0 ? Math.floor(balancePaise / avgDailySpend) : null;
+    const estimatedDate = daysRemaining !== null
+      ? new Date(now().getTime() + daysRemaining * 24 * 60 * 60 * 1000).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })
+      : null;
+    const lowBalance = balancePaise < 100000;
+    let recommendation;
+    if (daysRemaining === null) recommendation = 'No spending detected — balance is stable.';
+    else if (lowBalance) recommendation = 'Balance critically low (under ₹1,000). Top up immediately.';
+    else if (daysRemaining < 7) recommendation = 'Balance running low! Consider topping up soon.';
+    else if (daysRemaining < 30) recommendation = 'Balance should last a few more weeks at current rate.';
+    else recommendation = 'Balance is healthy at your current spending rate.';
+
+    result.runway = {
+      analysis_period: `Last ${lookback_days} days`,
+      total_spent: `₹${(totalSpentPaise / 100).toFixed(2)}`,
+      transactions_count: debitTxns.length,
+      avg_daily_spend: `₹${(avgDailySpend / 100).toFixed(2)}`,
+      estimated_days_remaining: daysRemaining,
+      estimated_exhaustion_date: estimatedDate,
+      low_balance_warning: lowBalance,
+      recommendation,
+    };
+  }
+
+  return result;
 }
 
 // Maps transaction type to entry_type (credit = money in, debit = money out)
@@ -651,7 +687,7 @@ export function getTransactionHistory(userId, days = 7, { entry_type, transactio
  * Get spending summary with category-wise breakdown.
  * Now includes both spending (debits) AND income (credits) sections.
  */
-export function getSpendingSummary(userId, days = 30) {
+export function getSpendingSummary(userId, days = 30, { group_by = 'category', top_n = 10 } = {}) {
   const user = users.get(userId);
   if (!user) return null;
 
@@ -664,9 +700,50 @@ export function getSpendingSummary(userId, days = 30) {
 
   // ── Spending (debits) ──
   const debitTxns = allTxns.filter(t => t.type !== 'load');
-  const categories = {};
   let totalSpentPaise = 0;
 
+  if (group_by === 'merchant') {
+    // MERGED: getMerchantInsights logic — group by merchant name
+    const merchantPayTxns = debitTxns.filter(t => t.type === 'pay' && t.status === 'success');
+    const merchantMap = {};
+    for (const t of merchantPayTxns) {
+      const name = t.merchant || 'Unknown';
+      if (!merchantMap[name]) merchantMap[name] = { total_paise: 0, count: 0, category: getCategory(t), last_visit: t.timestamp };
+      merchantMap[name].total_paise += Number(t.amount_paise);
+      merchantMap[name].count++;
+      if (new Date(t.timestamp) > new Date(merchantMap[name].last_visit)) merchantMap[name].last_visit = t.timestamp;
+    }
+    const sorted = Object.entries(merchantMap)
+      .map(([name, data]) => ({
+        merchant: name,
+        category: data.category,
+        total_spent: `₹${(data.total_paise / 100).toFixed(2)}`,
+        total_paise: data.total_paise,
+        transaction_count: data.count,
+        avg_transaction: `₹${((data.total_paise / data.count) / 100).toFixed(2)}`,
+        last_visit: formatIST(data.last_visit),
+      }))
+      .sort((a, b) => b.total_paise - a.total_paise)
+      .slice(0, top_n);
+    const totalMerchantSpent = sorted.reduce((s, m) => s + m.total_paise, 0);
+
+    return {
+      user_id: userId,
+      name: user.name,
+      period: `Last ${days} days`,
+      group_by: 'merchant',
+      total_merchants: Object.keys(merchantMap).length,
+      top_merchants: sorted.map(({ total_paise, ...rest }) => ({
+        ...rest,
+        percentage: totalMerchantSpent > 0 ? `${((total_paise / totalMerchantSpent) * 100).toFixed(1)}%` : '0%',
+      })),
+      total_merchant_spend: `₹${(totalMerchantSpent / 100).toFixed(2)}`,
+      generated_at: formatIST(now().toISOString()),
+    };
+  }
+
+  // Default: group_by === 'category'
+  const categories = {};
   for (const t of debitTxns) {
     const cat = getCategory(t);
     if (!categories[cat]) {
@@ -711,6 +788,7 @@ export function getSpendingSummary(userId, days = 30) {
     user_id: userId,
     name: user.name,
     days,
+    group_by: 'category',
     spending: {
       total_spent: `₹${(totalSpentPaise / 100).toFixed(2)}`,
       total_transactions: debitTxns.length,
@@ -806,7 +884,7 @@ export function searchTransactions(userId, { query, min_amount, max_amount, days
 /**
  * Get full user profile including KYC details and limits.
  */
-export function getUserProfile(userId) {
+export function getUserProfile(userId, { include_limits = false } = {}) {
   const user = users.get(userId);
   if (!user) return null;
 
@@ -818,7 +896,7 @@ export function getUserProfile(userId) {
   const recentTxns = transactions.filter(t => t.user_id === userId && new Date(t.timestamp) >= cutoff);
   const flaggedCount = transactions.filter(t => t.user_id === userId && t.flagged).length;
 
-  return {
+  const result = {
     user_id: user.user_id,
     name: user.name,
     phone: user.phone,
@@ -854,6 +932,30 @@ export function getUserProfile(userId) {
       flagged_transactions: flaggedCount,
     },
   };
+
+  // ABSORB: checkLimits → include_limits param (real-time utilization detail)
+  if (include_limits) {
+    const todayStart = new Date(now()); todayStart.setHours(0, 0, 0, 0);
+    const todayTxns = transactions.filter(t => t.user_id === userId && t.type !== 'load' && new Date(t.timestamp) >= todayStart);
+    const dailySpentPaise = todayTxns.reduce((s, t) => s + Number(t.amount_paise), 0);
+    const monthStart = new Date(now()); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+    const monthTxns = transactions.filter(t => t.user_id === userId && t.type !== 'load' && new Date(t.timestamp) >= monthStart);
+    const monthlySpentPaise = monthTxns.reduce((s, t) => s + Number(t.amount_paise), 0);
+
+    result.limits_detail = {
+      daily: { limit: `₹${(limits.daily / 100).toFixed(2)}`, used: `₹${(dailySpentPaise / 100).toFixed(2)}`, remaining: `₹${(Math.max(0, limits.daily - dailySpentPaise) / 100).toFixed(2)}`, utilization: `${((dailySpentPaise / limits.daily) * 100).toFixed(1)}%` },
+      monthly: { limit: `₹${(limits.monthly / 100).toFixed(2)}`, used: `₹${(monthlySpentPaise / 100).toFixed(2)}`, remaining: `₹${(Math.max(0, limits.monthly - monthlySpentPaise) / 100).toFixed(2)}`, utilization: `${((monthlySpentPaise / limits.monthly) * 100).toFixed(1)}%` },
+      max_balance: { limit: `₹${(limits.max_balance / 100).toFixed(2)}`, current: `₹${paisaToRupees(user.balance_paise)}`, utilization: `${((Number(user.balance_paise) / limits.max_balance) * 100).toFixed(1)}%` },
+      p2p_monthly: { limit: `₹${(limits.p2p_monthly / 100).toFixed(2)}`, used: `₹${paisaToRupees(user.monthly_p2p_mtd_paise)}`, remaining: `₹${((limits.p2p_monthly - Number(user.monthly_p2p_mtd_paise)) / 100).toFixed(2)}`, utilization: `${((Number(user.monthly_p2p_mtd_paise) / limits.p2p_monthly) * 100).toFixed(1)}%` },
+    };
+    result.limits_warnings = [
+      ...(dailySpentPaise >= limits.daily * 0.8 ? [`Daily limit ${((dailySpentPaise / limits.daily) * 100).toFixed(0)}% utilized`] : []),
+      ...(monthlySpentPaise >= limits.monthly * 0.8 ? [`Monthly limit ${((monthlySpentPaise / limits.monthly) * 100).toFixed(0)}% utilized`] : []),
+      ...(Number(user.balance_paise) >= limits.max_balance * 0.8 ? [`Balance at ${((Number(user.balance_paise) / limits.max_balance) * 100).toFixed(0)}% of max`] : []),
+    ];
+  }
+
+  return result;
 }
 
 /**
@@ -1884,7 +1986,7 @@ export function checkLimits(userId) {
   };
 }
 
-export function checkCompliance(userId) {
+export function checkCompliance(userId, { include_risk_score = false } = {}) {
   const user = users.get(userId);
   if (!user) return { error: 'User not found', user_id: userId };
 
@@ -1929,7 +2031,7 @@ export function checkCompliance(userId) {
 
   const isCompliant = issues.length === 0;
 
-  return {
+  const result = {
     user_id: userId,
     name: user.name,
     kyc_tier: user.kyc_tier,
@@ -1941,6 +2043,59 @@ export function checkCompliance(userId) {
     recommendation: !isCompliant ? 'Immediate action required to resolve compliance issues.' : warnings.length > 0 ? 'Address warnings to maintain compliance.' : 'Account fully compliant with RBI PPI regulations.',
     checked_at: formatIST(now().toISOString()),
   };
+
+  // MERGED: getUserRiskProfile → include_risk_score param
+  if (include_risk_score) {
+    const userTxns = transactions.filter(t => t.user_id === userId);
+    const flaggedCount = userTxns.filter(t => t.flagged).length;
+    const failedCount = userTxns.filter(t => t.status === 'failed').length;
+    const highValueTxns = userTxns.filter(t => Number(t.amount_paise) >= 1000000);
+    const pendingCount = userTxns.filter(t => t.status === 'pending').length;
+    const oneDayAgo = new Date(now()); oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+    const txns24h = userTxns.filter(t => new Date(t.timestamp) >= oneDayAgo);
+    const balanceRatio = Number(user.balance_paise) / limits.max_balance;
+    const p2pTxns = userTxns.filter(t => t.type === 'transfer');
+    const p2pVolumePaise = p2pTxns.reduce((s, t) => s + Number(t.amount_paise), 0);
+
+    let riskScore = 0;
+    const riskFactors = [];
+    if (flaggedCount > 0) { riskScore += 30; riskFactors.push(`${flaggedCount} flagged transaction(s)`); }
+    if (highValueTxns.length >= 3) { riskScore += 20; riskFactors.push(`${highValueTxns.length} high-value transactions (≥₹10,000)`); }
+    else if (highValueTxns.length > 0) { riskScore += 10; riskFactors.push(`${highValueTxns.length} high-value transaction(s)`); }
+    if (txns24h.length >= 5) { riskScore += 15; riskFactors.push(`High velocity: ${txns24h.length} transactions in 24h`); }
+    if (failedCount >= 3) { riskScore += 10; riskFactors.push(`${failedCount} failed transactions`); }
+    if (balanceRatio > 0.8) { riskScore += 10; riskFactors.push(`Balance at ${(balanceRatio * 100).toFixed(0)}% of KYC limit`); }
+    if (user.state === 'SUSPENDED') { riskScore += 25; riskFactors.push('Account currently suspended'); }
+    if (p2pVolumePaise >= 1000000) { riskScore += 10; riskFactors.push(`High P2P volume: ₹${paisaToRupees(p2pVolumePaise)}`); }
+    riskScore = Math.min(riskScore, 100);
+    const riskLevel = riskScore >= 60 ? 'HIGH' : riskScore >= 30 ? 'MEDIUM' : 'LOW';
+
+    result.risk_assessment = {
+      risk_score: riskScore,
+      risk_level: riskLevel,
+      risk_factors: riskFactors.length > 0 ? riskFactors : ['No significant risk signals detected'],
+    };
+    result.activity_summary = {
+      total_transactions: userTxns.length,
+      flagged_transactions: flaggedCount,
+      failed_transactions: failedCount,
+      pending_transactions: pendingCount,
+      high_value_transactions: highValueTxns.length,
+      transactions_last_24h: txns24h.length,
+    };
+    result.financial_summary = {
+      current_balance: `₹${paisaToRupees(user.balance_paise)}`,
+      kyc_limit: `₹${paisaToRupees(limits.max_balance)}`,
+      balance_utilization: `${(balanceRatio * 100).toFixed(1)}%`,
+      p2p_transfer_volume: `₹${paisaToRupees(p2pVolumePaise)}`,
+      p2p_transfer_count: p2pTxns.length,
+    };
+    result.flagged_details = userTxns.filter(t => t.flagged).map(t => ({
+      txn_id: t.txn_id, amount: `₹${paisaToRupees(t.amount_paise)}`, reason: t.flag_reason, flagged_at: t.flagged_at ? formatIST(t.flagged_at) : null,
+    }));
+  }
+
+  return result;
 }
 
 // ── Disputes & Support ───────────────────────────────────────────────────────
@@ -2446,7 +2601,7 @@ export function getKycExpiringUsers({ days_ahead = 90, include_expired = false, 
   };
 }
 
-export function queryKycExpiry({ from_date, to_date, kyc_state, wallet_state, min_balance, include_inactive = false, limit = 50 } = {}) {
+export function queryKycExpiry({ from_date, to_date, kyc_state, wallet_state, min_balance, include_inactive = false, limit = 50, urgency, sort_by = 'expiry_date', include_expired = false } = {}) {
   const allUsers = [...users.values()];
   const today = now();
 
@@ -2456,6 +2611,14 @@ export function queryKycExpiry({ from_date, to_date, kyc_state, wallet_state, mi
       const created = new Date(u.created_at || today.toISOString());
       const expiry = new Date(created.getTime() + 365 * 24 * 60 * 60 * 1000);
       const daysUntil = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+
+      // Urgency band classification (absorbed from getKycExpiringUsers)
+      let urgencyBand;
+      if (daysUntil < 0) urgencyBand = 'expired';
+      else if (daysUntil <= 7) urgencyBand = 'critical';
+      else if (daysUntil <= 30) urgencyBand = 'warning';
+      else if (daysUntil <= 90) urgencyBand = 'upcoming';
+      else urgencyBand = 'safe';
 
       return {
         user_id: u.user_id,
@@ -2470,12 +2633,16 @@ export function queryKycExpiry({ from_date, to_date, kyc_state, wallet_state, mi
         created_at: formatIST(created.toISOString()),
         expiry_date: formatIST(expiry.toISOString()),
         days_until_expiry: daysUntil,
+        urgency: urgencyBand,
+        is_expired: daysUntil < 0,
         last_activity_at: u.last_activity_at ? formatIST(u.last_activity_at) : null,
       };
     })
     .filter(u => {
       if (!u) return false;
       if (!include_inactive && !u.is_active) return false;
+      if (!include_expired && u.is_expired) return false;
+      if (urgency && u.urgency !== urgency) return false;
       if (kyc_state && u.kyc_state !== kyc_state) return false;
       if (wallet_state && u.wallet_state !== wallet_state) return false;
       if (min_balance && BigInt(u.balance_paise) < BigInt(min_balance)) return false;
@@ -2490,15 +2657,29 @@ export function queryKycExpiry({ from_date, to_date, kyc_state, wallet_state, mi
         if (expD > toD) return false;
       }
       return true;
-    })
-    .sort((a, b) => a.days_until_expiry - b.days_until_expiry);
+    });
+
+  // Sort support (absorbed from getKycExpiringUsers)
+  if (sort_by === 'balance') results.sort((a, b) => BigInt(b.balance_paise) > BigInt(a.balance_paise) ? 1 : -1);
+  else if (sort_by === 'name') results.sort((a, b) => a.name.localeCompare(b.name));
+  else results.sort((a, b) => a.days_until_expiry - b.days_until_expiry); // default: expiry_date
 
   const limited = results.slice(0, limit);
+
+  // Urgency summary (absorbed from getKycExpiringUsers)
+  const urgency_summary = {
+    expired: results.filter(u => u.urgency === 'expired').length,
+    critical: results.filter(u => u.urgency === 'critical').length,
+    warning: results.filter(u => u.urgency === 'warning').length,
+    upcoming: results.filter(u => u.urgency === 'upcoming').length,
+    safe: results.filter(u => u.urgency === 'safe').length,
+  };
 
   const aggregation = {
     total_matched: results.length,
     total_balance_paise: results.reduce((s, u) => s + BigInt(u.balance_paise), 0n).toString(),
     avg_days_to_expiry: results.length > 0 ? Math.round(results.reduce((s, u) => s + u.days_until_expiry, 0) / results.length) : 0,
+    urgency_summary,
     by_kyc_state: {},
     by_wallet_state: {},
   };
@@ -2508,7 +2689,7 @@ export function queryKycExpiry({ from_date, to_date, kyc_state, wallet_state, mi
   });
 
   return {
-    query: { from_date, to_date, kyc_state, wallet_state, min_balance, include_inactive, limit },
+    query: { from_date, to_date, kyc_state, wallet_state, min_balance, include_inactive, include_expired, urgency, sort_by, limit },
     aggregation,
     results: limited,
     has_more: results.length > limit,

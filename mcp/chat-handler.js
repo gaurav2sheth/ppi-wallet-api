@@ -19,28 +19,29 @@ import {
   searchTransactions,
   getUserProfile,
   compareSpending,
-  estimateBalanceRunway,
   detectRecurringPayments,
   compareUsers,
   generateReport,
   addMoney, payMerchant, transferP2P, payBill, requestRefund,
-  checkLimits, checkCompliance,
+  checkCompliance,
   raiseDispute, getDisputeStatus, getRefundStatus,
   getNotifications, setAlertThreshold,
   approveKyc, rejectKyc, requestKycUpgrade,
-  getMerchantInsights, getPeakUsage, getMonthlyTrends,
-  getKycExpiringUsers, queryKycExpiry, generateKycRenewalReport,
+  getPeakUsage, getMonthlyTrends,
+  queryKycExpiry, generateKycRenewalReport,
 } from './mock-data.js';
 
 // ── Tool definitions matching the MCP server schema ──────────────────────────
 const TOOLS = [
   {
     name: 'get_wallet_balance',
-    description: 'Retrieves the current INR balance and account status for a PPI wallet user. Use this when the user asks about their balance or account standing.',
+    description: 'Retrieves the current INR balance and account status for a PPI wallet user. Set include_runway=true to estimate how long the balance will last. Use this when the user asks about their balance, account standing, or "how long will my money last?".',
     input_schema: {
       type: 'object',
       properties: {
         user_id: { type: 'string', description: 'Unique wallet user ID (e.g. user_001)' },
+        include_runway: { type: 'boolean', description: 'Include balance runway estimation (avg daily spend, days remaining)', default: false },
+        lookback_days: { type: 'number', description: 'Days to calculate average spending for runway (default: 30)', default: 30 },
       },
       required: ['user_id'],
     },
@@ -92,12 +93,14 @@ const TOOLS = [
   },
   {
     name: 'get_spending_summary',
-    description: 'Returns a category-wise spending breakdown with income section and net flow. Use this for "how much did I spend on food?", "where is my money going?".',
+    description: 'Returns spending breakdown for a user. Use group_by="category" (default) for category analysis, or group_by="merchant" for top merchant insights. Use this for "how much did I spend on food?", "where is my money going?", "top merchants".',
     input_schema: {
       type: 'object',
       properties: {
         user_id: { type: 'string', description: 'Unique wallet user ID' },
         days: { type: 'number', description: 'Number of past days to analyze (default: 30)', default: 30 },
+        group_by: { type: 'string', enum: ['category', 'merchant'], description: 'Group by category or merchant (default: category)', default: 'category' },
+        top_n: { type: 'number', description: 'Number of top items when group_by=merchant (default: 10)', default: 10 },
       },
       required: ['user_id'],
     },
@@ -120,11 +123,12 @@ const TOOLS = [
   },
   {
     name: 'get_user_profile',
-    description: 'Returns full user profile including KYC tier, account limits, account age, and recent activity stats.',
+    description: 'Returns full user profile including KYC tier, account limits, account age, and recent activity stats. Set include_limits=true for real-time limit utilization. Use for "what are my limits?", "how much can I spend?".',
     input_schema: {
       type: 'object',
       properties: {
         user_id: { type: 'string', description: 'Unique wallet user ID' },
+        include_limits: { type: 'boolean', description: 'Include real-time limit utilization (daily, monthly, balance, P2P)', default: false },
       },
       required: ['user_id'],
     },
@@ -138,18 +142,6 @@ const TOOLS = [
         user_id: { type: 'string', description: 'Unique wallet user ID' },
         period1_days: { type: 'number', description: 'Days for recent period (default: 7)', default: 7 },
         period2_days: { type: 'number', description: 'Days for comparison period (default: 7)', default: 7 },
-      },
-      required: ['user_id'],
-    },
-  },
-  {
-    name: 'estimate_balance_runway',
-    description: 'Estimates how many days the balance will last. Warns for low absolute balance (<₹1,000).',
-    input_schema: {
-      type: 'object',
-      properties: {
-        user_id: { type: 'string', description: 'Unique wallet user ID' },
-        lookback_days: { type: 'number', description: 'Days to calculate average spending (default: 30)', default: 30 },
       },
       required: ['user_id'],
     },
@@ -169,7 +161,7 @@ const TOOLS = [
   },
   {
     name: 'compare_users',
-    description: 'Compares multiple users side-by-side on balance, spending, income, and activity.',
+    description: '[Admin-only] Compares multiple users side-by-side on balance, spending, income, and activity.',
     input_schema: {
       type: 'object',
       properties: {
@@ -262,23 +254,13 @@ const TOOLS = [
     },
   },
   {
-    name: 'check_limits',
-    description: 'Shows real-time limit utilization: daily, monthly, balance, and P2P limits. Use for "what are my limits?", "how much can I spend?".',
-    input_schema: {
-      type: 'object',
-      properties: {
-        user_id: { type: 'string', description: 'Unique wallet user ID' },
-      },
-      required: ['user_id'],
-    },
-  },
-  {
     name: 'check_compliance',
-    description: 'Runs RBI PPI compliance checks: balance limits, KYC state, Aadhaar, flagged transactions. Use for "is this user compliant?", "compliance check".',
+    description: 'Runs RBI PPI compliance checks: balance limits, KYC state, Aadhaar, flagged transactions. Set include_risk_score=true for 0-100 risk assessment. Use for "is this user compliant?", "risk profile", "compliance check".',
     input_schema: {
       type: 'object',
       properties: {
         user_id: { type: 'string', description: 'Unique wallet user ID' },
+        include_risk_score: { type: 'boolean', description: 'Include 0-100 risk score with risk factors and activity summary', default: false },
       },
       required: ['user_id'],
     },
@@ -384,21 +366,8 @@ const TOOLS = [
     },
   },
   {
-    name: 'get_merchant_insights',
-    description: 'Analyzes top merchants by spending. Use for "where do I spend most?", "top merchants", "favorite shops".',
-    input_schema: {
-      type: 'object',
-      properties: {
-        user_id: { type: 'string', description: 'Unique wallet user ID' },
-        days: { type: 'number', description: 'Past days to analyze', default: 30 },
-        top_n: { type: 'number', description: 'Number of top merchants', default: 10 },
-      },
-      required: ['user_id'],
-    },
-  },
-  {
     name: 'get_peak_usage',
-    description: 'Platform-wide peak usage analysis: busiest hours, days, transaction types. Use for admin "peak usage", "busiest time".',
+    description: '[Admin-only] Platform-wide peak usage analysis: busiest hours, days, transaction types. Use for "peak usage", "busiest time".',
     input_schema: {
       type: 'object',
       properties: {
@@ -409,7 +378,7 @@ const TOOLS = [
   },
   {
     name: 'get_monthly_trends',
-    description: 'Month-over-month platform trends: volumes, active users, growth. Use for admin "monthly growth", "trends".',
+    description: '[Admin-only] Month-over-month platform trends: volumes, active users, growth. Use for "monthly growth", "trends".',
     input_schema: {
       type: 'object',
       properties: {
@@ -419,22 +388,8 @@ const TOOLS = [
     },
   },
   {
-    name: 'get_kyc_expiring_users',
-    description: 'Filter users by KYC expiration date. Shows urgency bands (expired, critical ≤7d, warning ≤30d, upcoming ≤90d). Use for "expiring KYC", "KYC renewals due".',
-    input_schema: {
-      type: 'object',
-      properties: {
-        days_ahead: { type: 'number', description: 'Look-ahead window in days', default: 90 },
-        include_expired: { type: 'boolean', description: 'Include already-expired users', default: false },
-        urgency: { type: 'string', enum: ['expired', 'critical', 'warning', 'upcoming'], description: 'Filter by urgency band' },
-        sort_by: { type: 'string', enum: ['expiry_date', 'balance', 'name'], description: 'Sort order', default: 'expiry_date' },
-      },
-      required: [],
-    },
-  },
-  {
     name: 'query_kyc_expiry',
-    description: 'Database-style query for KYC expiry info with date ranges, state filters, balance thresholds, and aggregations. Use for "KYC expiry between dates", "expiry database query".',
+    description: 'Flexible query for KYC expiry with date ranges, state filters, urgency bands, balance thresholds, and aggregations. Use for "expiring KYC", "critical KYC renewals", "KYC expiry between dates".',
     input_schema: {
       type: 'object',
       properties: {
@@ -444,6 +399,9 @@ const TOOLS = [
         wallet_state: { type: 'string', description: 'Filter by wallet state' },
         min_balance: { type: 'string', description: 'Minimum balance in paise' },
         include_inactive: { type: 'boolean', description: 'Include inactive wallets', default: false },
+        include_expired: { type: 'boolean', description: 'Include already-expired users', default: false },
+        urgency: { type: 'string', enum: ['expired', 'critical', 'warning', 'upcoming', 'safe'], description: 'Filter by urgency band' },
+        sort_by: { type: 'string', enum: ['expiry_date', 'balance', 'name'], description: 'Sort order', default: 'expiry_date' },
         limit: { type: 'number', description: 'Max results', default: 50 },
       },
       required: [],
@@ -467,7 +425,7 @@ const TOOLS = [
 function executeTool(name, input) {
   switch (name) {
     case 'get_wallet_balance': {
-      const result = getWalletBalance(input.user_id);
+      const result = getWalletBalance(input.user_id, { include_runway: input.include_runway ?? false, lookback_days: input.lookback_days ?? 30 });
       return result ?? { error: 'User not found', user_id: input.user_id };
     }
     case 'get_transaction_history': {
@@ -491,7 +449,7 @@ function executeTool(name, input) {
       return listUsers();
     }
     case 'get_spending_summary': {
-      const result = getSpendingSummary(input.user_id, input.days ?? 30);
+      const result = getSpendingSummary(input.user_id, input.days ?? 30, { group_by: input.group_by ?? 'category', top_n: input.top_n ?? 10 });
       return result ?? { error: 'User not found', user_id: input.user_id };
     }
     case 'search_transactions': {
@@ -505,19 +463,13 @@ function executeTool(name, input) {
       return result ?? { error: 'User not found', user_id: input.user_id };
     }
     case 'get_user_profile': {
-      const result = getUserProfile(input.user_id);
+      const result = getUserProfile(input.user_id, { include_limits: input.include_limits ?? false });
       return result ?? { error: 'User not found', user_id: input.user_id };
     }
     case 'compare_spending': {
       const result = compareSpending(input.user_id, {
         period1_days: input.period1_days ?? 7,
         period2_days: input.period2_days ?? 7,
-      });
-      return result ?? { error: 'User not found', user_id: input.user_id };
-    }
-    case 'estimate_balance_runway': {
-      const result = estimateBalanceRunway(input.user_id, {
-        lookback_days: input.lookback_days ?? 30,
       });
       return result ?? { error: 'User not found', user_id: input.user_id };
     }
@@ -553,11 +505,8 @@ function executeTool(name, input) {
     case 'request_refund': {
       return requestRefund(input.user_id, { txn_id: input.txn_id, reason: input.reason });
     }
-    case 'check_limits': {
-      return checkLimits(input.user_id);
-    }
     case 'check_compliance': {
-      return checkCompliance(input.user_id);
+      return checkCompliance(input.user_id, { include_risk_score: input.include_risk_score ?? false });
     }
     case 'raise_dispute': {
       return raiseDispute(input.user_id, { txn_id: input.txn_id, type: input.type ?? 'failed_transaction', description: input.description });
@@ -583,22 +532,11 @@ function executeTool(name, input) {
     case 'request_kyc_upgrade': {
       return requestKycUpgrade(input.user_id);
     }
-    case 'get_merchant_insights': {
-      return getMerchantInsights(input.user_id, { days: input.days ?? 30, top_n: input.top_n ?? 10 });
-    }
     case 'get_peak_usage': {
       return getPeakUsage({ days: input.days ?? 30 });
     }
     case 'get_monthly_trends': {
       return getMonthlyTrends({ months: input.months ?? 3 });
-    }
-    case 'get_kyc_expiring_users': {
-      return getKycExpiringUsers({
-        days_ahead: input.days_ahead ?? 90,
-        include_expired: input.include_expired ?? false,
-        urgency: input.urgency,
-        sort_by: input.sort_by ?? 'expiry_date',
-      });
     }
     case 'query_kyc_expiry': {
       return queryKycExpiry({
@@ -608,6 +546,9 @@ function executeTool(name, input) {
         wallet_state: input.wallet_state,
         min_balance: input.min_balance,
         include_inactive: input.include_inactive ?? false,
+        include_expired: input.include_expired ?? false,
+        urgency: input.urgency,
+        sort_by: input.sort_by ?? 'expiry_date',
         limit: input.limit ?? 50,
       });
     }
