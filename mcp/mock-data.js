@@ -500,6 +500,288 @@ const alertThresholds = new Map([
   ['user_002', { low_balance: 100000, high_transaction: 1000000, daily_spend: 2000000 }],
 ]);
 
+// ── Employer Data ───────────────────────────────────────────────────────────
+const employers = new Map([
+  ['employer_001', {
+    employer_id: 'employer_001',
+    name: 'Paytm',
+    allowed_types: ['FOOD', 'NCMC TRANSIT', 'FUEL'],
+  }],
+  ['employer_002', {
+    employer_id: 'employer_002',
+    name: 'TCS',
+    allowed_types: ['FOOD', 'NCMC TRANSIT', 'FASTAG', 'GIFT', 'FUEL'],
+  }],
+]);
+
+// ── Sub-Wallet Data ─────────────────────────────────────────────────────────
+// Map<userId, sub-wallet[]>
+const subWalletStore = new Map();
+
+function daysAgoISO(n) {
+  const d = new Date(MODULE_LOAD_TIME);
+  d.setDate(d.getDate() - n);
+  return d.toISOString();
+}
+
+function daysFromNowISO(n) {
+  const d = new Date(MODULE_LOAD_TIME);
+  d.setDate(d.getDate() + n);
+  return d.toISOString();
+}
+
+// Seed sub-wallet data for user_001 (Gaurav Sheth)
+subWalletStore.set('user_001', [
+  {
+    sub_wallet_id: 'SW-user_001-FOOD',
+    type: 'FOOD',
+    balance_paise: 120000,
+    status: 'ACTIVE',
+    monthly_loaded_paise: 300000,
+    loaded_by: 'employer_001',
+    last_loaded_at: daysAgoISO(2),
+    expiry_date: null,
+    transactions: [
+      { txn_id: 'SWTXN-F001', amount_paise: 35000, type: 'debit', merchant: 'Swiggy', merchant_category: 'Food & Dining', description: 'Swiggy lunch order', timestamp: daysAgoISO(0), status: 'success' },
+      { txn_id: 'SWTXN-F002', amount_paise: 25000, type: 'debit', merchant: 'Zomato', merchant_category: 'Food & Dining', description: 'Zomato dinner order', timestamp: daysAgoISO(1), status: 'success' },
+      { txn_id: 'SWTXN-F003', amount_paise: 8000, type: 'debit', merchant: 'Starbucks', merchant_category: 'Food & Dining', description: 'Starbucks coffee', timestamp: daysAgoISO(2), status: 'success' },
+      { txn_id: 'SWTXN-F004', amount_paise: 12000, type: 'debit', merchant: 'Dominos', merchant_category: 'Food & Dining', description: 'Dominos pizza', timestamp: daysAgoISO(3), status: 'success' },
+      { txn_id: 'SWTXN-F005', amount_paise: 300000, type: 'credit', merchant: 'Paytm', merchant_category: 'Employer Benefit Load', description: 'FOOD benefit - Monthly Benefits', timestamp: daysAgoISO(5), status: 'success' },
+    ],
+  },
+  {
+    sub_wallet_id: 'SW-user_001-NCMC_TRANSIT',
+    type: 'NCMC TRANSIT',
+    balance_paise: 80000,
+    status: 'ACTIVE',
+    monthly_loaded_paise: 200000,
+    loaded_by: 'employer_001',
+    last_loaded_at: daysAgoISO(5),
+    expiry_date: null,
+    transactions: [
+      { txn_id: 'SWTXN-T001', amount_paise: 6000, type: 'debit', merchant: 'Mumbai Metro', merchant_category: 'Transit', description: 'Metro ride - Andheri to BKC', timestamp: daysAgoISO(0), status: 'success' },
+      { txn_id: 'SWTXN-T002', amount_paise: 4000, type: 'debit', merchant: 'BEST Bus', merchant_category: 'Transit', description: 'Bus ticket', timestamp: daysAgoISO(1), status: 'success' },
+      { txn_id: 'SWTXN-T003', amount_paise: 10000, type: 'debit', merchant: 'Mumbai Metro', merchant_category: 'Transit', description: 'Metro monthly pass', timestamp: daysAgoISO(3), status: 'success' },
+      { txn_id: 'SWTXN-T004', amount_paise: 200000, type: 'credit', merchant: 'Paytm', merchant_category: 'Employer Benefit Load', description: 'NCMC TRANSIT benefit - Monthly Benefits', timestamp: daysAgoISO(5), status: 'success' },
+    ],
+  },
+  {
+    sub_wallet_id: 'SW-user_001-FASTAG',
+    type: 'FASTAG',
+    balance_paise: 50000,
+    status: 'ACTIVE',
+    monthly_loaded_paise: 100000,
+    loaded_by: 'employer_001',
+    last_loaded_at: daysAgoISO(10),
+    expiry_date: null,
+    transactions: [
+      { txn_id: 'SWTXN-FT01', amount_paise: 15000, type: 'debit', merchant: 'NHAI Toll', merchant_category: 'Toll', description: 'Mumbai-Pune Expressway toll', timestamp: daysAgoISO(1), status: 'success' },
+      { txn_id: 'SWTXN-FT02', amount_paise: 10000, type: 'debit', merchant: 'NHAI Toll', merchant_category: 'Toll', description: 'Bandra-Worli Sea Link toll', timestamp: daysAgoISO(4), status: 'success' },
+      { txn_id: 'SWTXN-FT03', amount_paise: 100000, type: 'credit', merchant: 'Paytm', merchant_category: 'Employer Benefit Load', description: 'FASTAG benefit load', timestamp: daysAgoISO(10), status: 'success' },
+    ],
+  },
+  {
+    sub_wallet_id: 'SW-user_001-GIFT',
+    type: 'GIFT',
+    balance_paise: 200000,
+    status: 'ACTIVE',
+    monthly_loaded_paise: 0,
+    loaded_by: 'employer_001',
+    last_loaded_at: daysAgoISO(30),
+    expiry_date: daysFromNowISO(335),
+    transactions: [
+      { txn_id: 'SWTXN-G001', amount_paise: 200000, type: 'credit', merchant: 'Paytm', merchant_category: 'Employer Benefit Load', description: 'GIFT benefit - Diwali Bonus', timestamp: daysAgoISO(30), status: 'success' },
+    ],
+  },
+  {
+    sub_wallet_id: 'SW-user_001-FUEL',
+    type: 'FUEL',
+    balance_paise: 150000,
+    status: 'ACTIVE',
+    monthly_loaded_paise: 250000,
+    loaded_by: 'employer_001',
+    last_loaded_at: daysAgoISO(3),
+    expiry_date: null,
+    transactions: [
+      { txn_id: 'SWTXN-FL01', amount_paise: 50000, type: 'debit', merchant: 'HP Petrol', merchant_category: 'Fuel', description: 'HP Petrol - Fuel refill', timestamp: daysAgoISO(0), status: 'success' },
+      { txn_id: 'SWTXN-FL02', amount_paise: 35000, type: 'debit', merchant: 'IOCL', merchant_category: 'Fuel', description: 'Indian Oil - Diesel', timestamp: daysAgoISO(2), status: 'success' },
+      { txn_id: 'SWTXN-FL03', amount_paise: 250000, type: 'credit', merchant: 'Paytm', merchant_category: 'Employer Benefit Load', description: 'FUEL benefit - Monthly Benefits', timestamp: daysAgoISO(3), status: 'success' },
+    ],
+  },
+]);
+
+// Generate sub-wallets for users 2-200 with varied data
+(function generateSubWallets() {
+  resetSeed(500);
+
+  const swTypes = ['FOOD', 'NCMC TRANSIT', 'FASTAG', 'GIFT', 'FUEL'];
+  const swMerchants = {
+    FOOD: [
+      { name: 'Swiggy', cat: 'Food & Dining' }, { name: 'Zomato', cat: 'Food & Dining' },
+      { name: 'Starbucks', cat: 'Food & Dining' }, { name: 'Dominos', cat: 'Food & Dining' },
+      { name: 'McDonalds', cat: 'Food & Dining' },
+    ],
+    'NCMC TRANSIT': [
+      { name: 'Mumbai Metro', cat: 'Transit' }, { name: 'Delhi Metro', cat: 'Transit' },
+      { name: 'BEST Bus', cat: 'Transit' }, { name: 'Local Train', cat: 'Transit' },
+    ],
+    FASTAG: [
+      { name: 'NHAI Toll', cat: 'Toll' }, { name: 'FASTag Recharge', cat: 'FASTag' },
+    ],
+    GIFT: [
+      { name: 'Amazon', cat: 'Shopping' }, { name: 'Flipkart', cat: 'Shopping' },
+      { name: 'Myntra', cat: 'Shopping' }, { name: 'Swiggy', cat: 'Food & Dining' },
+    ],
+    FUEL: [
+      { name: 'HP Petrol', cat: 'Fuel' }, { name: 'IOCL', cat: 'Fuel' },
+      { name: 'BPCL', cat: 'Fuel' }, { name: 'Shell', cat: 'Fuel' },
+    ],
+  };
+
+  const maxBalances = {
+    FOOD: 300000, 'NCMC TRANSIT': 200000, FASTAG: 1000000, GIFT: 500000, FUEL: 250000,
+  };
+  const monthlyLimits = {
+    FOOD: 300000, 'NCMC TRANSIT': 200000, FASTAG: 1000000, GIFT: 0, FUEL: 250000,
+  };
+
+  for (let i = 2; i <= 200; i++) {
+    const userId = `user_${String(i).padStart(3, '0')}`;
+    const user = users.get(userId);
+    if (!user || user.state !== 'ACTIVE') continue;
+
+    // Each user gets 2-5 random sub-wallet types
+    const numTypes = randomInt(2, 5);
+    const shuffled = [...swTypes].sort(() => seededRandom() - 0.5);
+    const selectedTypes = shuffled.slice(0, numTypes);
+    const empId = seededRandom() > 0.5 ? 'employer_001' : 'employer_002';
+
+    const userSubWallets = [];
+    for (const swType of selectedTypes) {
+      const employer = employers.get(empId);
+      if (!employer?.allowed_types.includes(swType)) continue;
+
+      const maxBal = maxBalances[swType];
+      const balance = randomInt(0, maxBal);
+      const monthlyLoaded = monthlyLimits[swType] > 0
+        ? randomInt(0, monthlyLimits[swType])
+        : (swType === 'GIFT' ? randomInt(100000, 500000) : 0);
+
+      // Generate 3-8 transactions per sub-wallet
+      const txnCount = randomInt(3, 8);
+      const merchantList = swMerchants[swType];
+      const txns = [];
+
+      // Always add the credit (load) transaction
+      txns.push({
+        txn_id: `SWTXN-${userId}-${swType.charAt(0)}${randomInt(1000, 9999)}`,
+        amount_paise: monthlyLoaded || balance + randomInt(10000, 100000),
+        type: 'credit',
+        merchant: employer.name,
+        merchant_category: 'Employer Benefit Load',
+        description: `${swType} benefit${swType === 'GIFT' ? ' - Diwali Bonus' : ' - Monthly Benefits'}`,
+        timestamp: daysAgoISO(randomInt(2, 15)),
+        status: 'success',
+      });
+
+      // Add debit transactions
+      for (let t = 1; t < txnCount; t++) {
+        const m = pickRandom(merchantList);
+        txns.push({
+          txn_id: `SWTXN-${userId}-${swType.charAt(0)}${randomInt(1000, 9999)}`,
+          amount_paise: randomInt(2000, Math.min(50000, maxBal / 3)),
+          type: 'debit',
+          merchant: m.name,
+          merchant_category: m.cat,
+          description: `${m.name} payment`,
+          timestamp: daysAgoISO(randomInt(0, 20)),
+          status: pickWeighted(['success', 'success', 'failed'], [45, 45, 10]),
+        });
+      }
+
+      userSubWallets.push({
+        sub_wallet_id: `SW-${userId}-${swType.replace(/\s+/g, '_')}`,
+        type: swType,
+        balance_paise: balance,
+        status: 'ACTIVE',
+        monthly_loaded_paise: monthlyLoaded,
+        loaded_by: empId,
+        last_loaded_at: daysAgoISO(randomInt(1, 15)),
+        expiry_date: swType === 'GIFT' ? daysFromNowISO(randomInt(30, 365)) : null,
+        transactions: txns,
+      });
+    }
+
+    if (userSubWallets.length > 0) {
+      subWalletStore.set(userId, userSubWallets);
+    }
+  }
+})();
+
+// ── Sub-Wallet Data Access Functions ────────────────────────────────────────
+export function getSubWalletData(userId) {
+  return subWalletStore.get(userId) || [];
+}
+
+export function getEmployerData(employerId) {
+  return employers.get(employerId) || null;
+}
+
+export function getUserMainBalancePaise(userId) {
+  const user = users.get(userId);
+  if (!user) return null;
+  return Number(user.balance_paise);
+}
+
+export function deductMainBalance(userId, amountPaise) {
+  const user = users.get(userId);
+  if (!user) return false;
+  user.balance_paise = BigInt(Number(user.balance_paise) - amountPaise);
+  return true;
+}
+
+export function updateSubWalletBalance(userId, updatedSw) {
+  let sws = subWalletStore.get(userId);
+  if (!sws) {
+    sws = [];
+    subWalletStore.set(userId, sws);
+  }
+
+  const idx = sws.findIndex(s => s.type === updatedSw.type);
+  if (idx >= 0) {
+    sws[idx] = { ...sws[idx], ...updatedSw };
+  } else {
+    sws.push({
+      sub_wallet_id: updatedSw.sub_wallet_id,
+      type: updatedSw.type,
+      balance_paise: updatedSw.balance_paise,
+      status: updatedSw.status || 'ACTIVE',
+      monthly_loaded_paise: updatedSw.monthly_loaded_paise || 0,
+      loaded_by: updatedSw.loaded_by,
+      last_loaded_at: updatedSw.last_loaded_at,
+      expiry_date: updatedSw.expiry_date || null,
+      transactions: [],
+    });
+  }
+}
+
+export function addSubWalletTransaction(userId, type, txn) {
+  const sws = subWalletStore.get(userId);
+  if (!sws) return;
+  const sw = sws.find(s => s.type === type);
+  if (!sw) return;
+  if (!sw.transactions) sw.transactions = [];
+  sw.transactions.unshift(txn);
+}
+
+export function listAllSubWalletData() {
+  return subWalletStore;
+}
+
+export function listEmployers() {
+  return [...employers.values()];
+}
+
 // ── Data Access Functions ─────────────────────────────────────────────────────
 
 export function getWalletBalance(userId, { include_runway = false, lookback_days = 30 } = {}) {

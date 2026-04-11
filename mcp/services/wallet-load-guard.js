@@ -14,7 +14,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { getWalletBalance, getTransactionHistory } from '../mock-data.js';
+import { getWalletBalance, getTransactionHistory, getSubWalletData } from '../mock-data.js';
 
 // ── RBI PPI Limits (amounts in paise) ──────────────────────────────────────────
 const BALANCE_CAP_PAISE = 10000000;       // ₹1,00,000
@@ -96,15 +96,22 @@ export async function validateLoadAmount(userId, loadAmountPaise, apiKey) {
   const monthlyLoadedPaise = getMonthlyLoadedPaise(userId);
   const userName = balanceData.name;
 
-  console.log(`[Load Guard]   Balance: ${formatINR(currentBalancePaise)}, KYC: ${kycType}, Monthly loaded: ${formatINR(monthlyLoadedPaise)}`);
+  // Include sub-wallet balances in total balance calculation
+  const subWallets = getSubWalletData(userId);
+  const subWalletTotalPaise = subWallets
+    ? subWallets.reduce((sum, sw) => sum + Number(sw.balance_paise || 0), 0)
+    : 0;
+  const totalBalancePaise = currentBalancePaise + subWalletTotalPaise;
+
+  console.log(`[Load Guard]   Main balance: ${formatINR(currentBalancePaise)}, Sub-wallets: ${formatINR(subWalletTotalPaise)}, Total: ${formatINR(totalBalancePaise)}, KYC: ${kycType}, Monthly loaded: ${formatINR(monthlyLoadedPaise)}`);
 
   // Step 2 — Run all 3 rules
   const violations = [];
 
-  // Rule 1: BALANCE_CAP — ₹1,00,000 max wallet balance
-  const newBalance = currentBalancePaise + loadAmountPaise;
+  // Rule 1: BALANCE_CAP — ₹1,00,000 max wallet balance (includes sub-wallet balances)
+  const newBalance = totalBalancePaise + loadAmountPaise;
   if (newBalance > BALANCE_CAP_PAISE) {
-    const maxAllowed = Math.max(0, BALANCE_CAP_PAISE - currentBalancePaise);
+    const maxAllowed = Math.max(0, BALANCE_CAP_PAISE - totalBalancePaise);
     violations.push({
       rule: 'BALANCE_CAP',
       max_allowed: paiseToRupees(maxAllowed),
@@ -122,9 +129,9 @@ export async function validateLoadAmount(userId, loadAmountPaise, apiKey) {
     });
   }
 
-  // Rule 3: MIN_KYC_CAP — ₹10,000 max balance for Minimum KYC users
+  // Rule 3: MIN_KYC_CAP — ₹10,000 max balance for Minimum KYC users (total including sub-wallets)
   if (kycType === 'MINIMUM_KYC' && newBalance > MIN_KYC_BALANCE_CAP_PAISE) {
-    const maxAllowed = Math.max(0, MIN_KYC_BALANCE_CAP_PAISE - currentBalancePaise);
+    const maxAllowed = Math.max(0, MIN_KYC_BALANCE_CAP_PAISE - totalBalancePaise);
     violations.push({
       rule: 'MIN_KYC_CAP',
       max_allowed: paiseToRupees(maxAllowed),
@@ -212,8 +219,8 @@ async function generateBlockMessage(apiKey, context) {
   const systemPrompt =
     'You are a helpful wallet assistant for a PPI wallet app in India. ' +
     'When a transaction is blocked, explain clearly and kindly why it was blocked ' +
-    'and what the user can do. Always be specific with rupee amounts. ' +
-    'Never use jargon. Keep response under 3 sentences.';
+    'and what the user can do. The ₹1,00,000 limit includes the main wallet AND all benefits wallets (Food, Transit, FASTag, Gift, Fuel) combined. ' +
+    'Always be specific with rupee amounts. Never use jargon. Keep response under 3 sentences.';
 
   const userPrompt =
     `A wallet user tried to add ₹${context.load_amount.toLocaleString('en-IN')} but was blocked.\n\n` +

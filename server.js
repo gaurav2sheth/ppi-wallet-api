@@ -4,6 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { handleChat } from './mcp/chat-handler.js';
 import { runKycAlerts, previewAtRiskUsers } from './mcp/services/kyc-alert-service.js';
 import { validateLoadAmount, getBlockedAttempts } from './mcp/services/wallet-load-guard.js';
+import { getSubWallets, loadSubWallet, spendFromSubWallet, validateMerchantEligibility, getBenefitsUtilisationSummary } from './mcp/services/sub-wallet-service.js';
 import {
   getWalletBalance,
   getTransactionHistory,
@@ -545,6 +546,43 @@ app.post('/api/wallet/validate-load', async (req, res) => {
 // ── GET /api/wallet/load-guard-log ─────────────────────────────────────────
 app.get('/api/wallet/load-guard-log', (_req, res) => {
   res.json({ attempts: getBlockedAttempts() });
+});
+
+// ── Sub-Wallet Routes ─────────────────────────────────────────────────────────
+app.get('/api/wallet/sub-wallets/:userId', (req, res) => {
+  const result = getSubWallets(req.params.userId);
+  if (!result) return res.status(404).json({ error: 'User not found' });
+  res.json(result);
+});
+
+app.post('/api/wallet/sub-wallets/load', (req, res) => {
+  const { employer_id, user_id, type, amount_paise, occasion } = req.body;
+  if (!employer_id || !user_id || !type || !amount_paise) {
+    return res.status(400).json({ error: 'employer_id, user_id, type, and amount_paise are required' });
+  }
+  const result = loadSubWallet(employer_id, user_id, type, amount_paise, occasion);
+  res.status(result.success ? 200 : 400).json(result);
+});
+
+app.post('/api/wallet/sub-wallets/spend', (req, res) => {
+  const { user_id, type, amount_paise, merchant, merchant_category } = req.body;
+  if (!user_id || !type || !amount_paise || !merchant) {
+    return res.status(400).json({ error: 'user_id, type, amount_paise, and merchant are required' });
+  }
+  const result = spendFromSubWallet(user_id, type, amount_paise, merchant, merchant_category || 'Other');
+  res.status(result.success ? 200 : 400).json(result);
+});
+
+app.get('/api/wallet/sub-wallets/eligibility', (req, res) => {
+  const { merchant_category, sub_wallet_type } = req.query;
+  if (!merchant_category || !sub_wallet_type) {
+    return res.status(400).json({ error: 'merchant_category and sub_wallet_type query params required' });
+  }
+  res.json(validateMerchantEligibility(String(merchant_category), String(sub_wallet_type)));
+});
+
+app.get('/api/wallet/benefits/utilisation', (_req, res) => {
+  res.json(getBenefitsUtilisationSummary());
 });
 
 // ── Start ────────────────────────────────────────────────────────────────────
