@@ -30,6 +30,54 @@ function paisaToRupees(paise) {
   return (Number(paise) / 100).toFixed(2);
 }
 
+// ── Seeded PRNG for reproducible generated data ─────────────────────────────
+let _seed = 42;
+function seededRandom() {
+  _seed = (_seed * 16807 + 0) % 2147483647;
+  return (_seed - 1) / 2147483646;
+}
+function resetSeed(s = 42) { _seed = s; }
+function pickRandom(arr) { return arr[Math.floor(seededRandom() * arr.length)]; }
+function pickWeighted(items, weights) {
+  const total = weights.reduce((a, b) => a + b, 0);
+  let r = seededRandom() * total;
+  for (let i = 0; i < items.length; i++) { r -= weights[i]; if (r <= 0) return items[i]; }
+  return items[items.length - 1];
+}
+function randomInt(min, max) { return min + Math.floor(seededRandom() * (max - min + 1)); }
+
+const FIRST_NAMES = [
+  'Aarav', 'Aditi', 'Aditya', 'Akash', 'Amit', 'Ananya', 'Anjali', 'Arjun',
+  'Bhavya', 'Chetan', 'Deepak', 'Diya', 'Gaurav', 'Harsh', 'Ishaan', 'Isha',
+  'Jayesh', 'Kajal', 'Karan', 'Kavya', 'Kriti', 'Lakshmi', 'Manish', 'Meera',
+  'Mohit', 'Neha', 'Nikhil', 'Nisha', 'Pallavi', 'Pooja', 'Priya', 'Rahul',
+  'Rajesh', 'Ravi', 'Ritika', 'Rohit', 'Sakshi', 'Sandeep', 'Sanjay', 'Shreya',
+  'Simran', 'Sneha', 'Srishti', 'Sunil', 'Tanvi', 'Varun', 'Vidya', 'Vikram',
+  'Vivek', 'Yash',
+];
+const LAST_NAMES = [
+  'Agarwal', 'Bansal', 'Choudhary', 'Desai', 'Dubey', 'Gupta', 'Iyer', 'Jain',
+  'Joshi', 'Kapoor', 'Khan', 'Kumar', 'Malhotra', 'Mehta', 'Mishra', 'Nair',
+  'Pandey', 'Patel', 'Rao', 'Reddy', 'Saxena', 'Shah', 'Sharma', 'Singh',
+  'Sinha', 'Srivastava', 'Thakur', 'Tiwari', 'Verma', 'Yadav',
+];
+const PHONE_PREFIXES = ['98', '97', '96', '95', '94', '93', '91', '90', '88', '87', '86', '85', '70', '76', '77', '78', '79'];
+const GEN_MERCHANTS = [
+  'Swiggy', 'Zomato', 'Uber', 'Ola', 'BigBasket', 'Blinkit', 'Amazon', 'Flipkart',
+  'Myntra', 'D-Mart', 'Reliance Fresh', 'PVR Cinemas', 'BookMyShow', 'MakeMyTrip',
+  'Rapido', 'PharmEasy', '1mg', 'Udemy', 'BESCOM', 'Jio', 'Airtel', 'Vi',
+  'Tata Play', 'Netflix', 'Hotstar', 'HP Petrol', 'IOCL', 'Shell', 'Bajaj Finserv',
+  'HDFC Life', 'ICICI Lombard', 'Star Health', 'Starbucks', 'Dominos', 'McDonalds',
+  'Croma', 'Nykaa', 'Apollo Pharmacy', 'Decathlon', 'IRCTC',
+];
+function genName() { return `${pickRandom(FIRST_NAMES)} ${pickRandom(LAST_NAMES)}`; }
+function genPhone() {
+  const prefix = pickRandom(PHONE_PREFIXES);
+  let rest = '';
+  for (let i = 0; i < 8; i++) rest += String(randomInt(0, 9));
+  return `+91-${prefix}${rest}`;
+}
+
 // ── KYC States: UNVERIFIED → MIN_KYC → FULL_KYC_PENDING → FULL_KYC / REJECTED / SUSPENDED
 // kyc_tier is the RBI classification (MINIMUM/FULL), kyc_state is the verification workflow state
 
@@ -227,6 +275,65 @@ const users = new Map([
   }],
 ]);
 
+// ── Generate 190 additional users for consistency with admin dashboard ────────
+(function generateAdditionalUsers() {
+  resetSeed(100); // Same seed as admin dashboard
+  for (let i = 11; i <= 200; i++) {
+    const userId = `user_${String(i).padStart(3, '0')}`;
+    const name = genName();
+    const phone = genPhone();
+
+    const kycTier = pickWeighted(['FULL', 'MINIMUM'], [40, 60]);
+    const kycState = pickWeighted(
+      ['FULL_KYC', 'MIN_KYC', 'FULL_KYC_PENDING', 'REJECTED', 'UNVERIFIED', 'SUSPENDED'],
+      [35, 40, 10, 5, 7, 3]
+    );
+    const walletState = pickWeighted(
+      ['ACTIVE', 'DORMANT', 'SUSPENDED', 'EXPIRED', 'CLOSED'],
+      [75, 10, 5, 5, 5]
+    );
+
+    const maxBalance = kycTier === 'FULL' ? 20000000 : 1000000;
+    const balancePaise = BigInt(randomInt(0, maxBalance));
+    const heldPaise = BigInt(randomInt(0, Math.min(50000, Number(balancePaise) / 2)));
+
+    const accountAgeDays = randomInt(7, 365);
+    const isActive = walletState === 'ACTIVE';
+    const lastActivityDays = isActive ? randomInt(0, 30) : walletState === 'DORMANT' ? randomInt(60, 180) : randomInt(30, 90);
+
+    const aadhaarVerified = kycState === 'FULL_KYC' || kycState === 'FULL_KYC_PENDING' || (kycState === 'MIN_KYC' && seededRandom() > 0.5);
+    const panMasked = (kycState === 'FULL_KYC' || (kycState === 'MIN_KYC' && seededRandom() > 0.6))
+      ? `${pickRandom('ABCDEFGHJ'.split(''))}${pickRandom('BCDEFGHJK'.split(''))}${pickRandom('CDEFGHJKL'.split(''))}${pickRandom('DEFGHJKLM'.split(''))}${pickRandom('EFGHJKLMN'.split(''))}****${pickRandom('FGHJKLMNP'.split(''))}`
+      : null;
+    const ckycNumber = kycState === 'FULL_KYC' ? `CKYC-${randomInt(10000000, 99999999)}` : null;
+
+    const walletExpiryDate = kycTier === 'MINIMUM' ? daysAgo(-(365 - accountAgeDays)) : null;
+    const rejectedReason = kycState === 'REJECTED'
+      ? pickRandom(['Document mismatch', 'Blurry Aadhaar photo', 'Name mismatch with records', 'Invalid date of birth', 'Duplicate account detected'])
+      : kycState === 'SUSPENDED' ? 'KYC non-compliance' : null;
+
+    users.set(userId, {
+      user_id: userId,
+      name,
+      phone,
+      balance_paise: balancePaise,
+      held_paise: heldPaise,
+      kyc_tier: kycTier,
+      kyc_state: kycState,
+      aadhaar_verified: aadhaarVerified,
+      pan_masked: panMasked,
+      ckyc_number: ckycNumber,
+      wallet_expiry_date: walletExpiryDate,
+      rejected_reason: rejectedReason,
+      monthly_p2p_mtd_paise: BigInt(randomInt(0, kycTier === 'FULL' ? 500000 : 100000)),
+      annual_load_ytd_paise: BigInt(randomInt(0, kycTier === 'FULL' ? 5000000 : 500000)),
+      state: walletState,
+      created_at: daysAgo(accountAgeDays),
+      last_activity_at: daysAgo(lastActivityDays),
+    });
+  }
+})();
+
 // ── 40 Transactions across users and last 90 days ────────────────────────────
 const transactions = [
   // user_001 (Gaurav Sheth) — 11 transactions matching wallet app seed data
@@ -293,6 +400,68 @@ const transactions = [
   { txn_id: 'txn_040', user_id: 'user_010', type: 'pay', amount_paise: 180000n, merchant: 'Reliance Fresh', description: 'Groceries - Reliance Fresh', timestamp: daysAgo(4), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
   { txn_id: 'txn_041', user_id: 'user_010', type: 'pay', amount_paise: 350000n, merchant: 'IRCTC', description: 'Train ticket - IRCTC Mumbai to Pune', timestamp: daysAgo(8), status: 'success', flagged: false, flag_reason: null, flagged_at: null },
 ];
+
+// ── Generate ~500 additional transactions for generated users ─────────────────
+(function generateAdditionalTransactions() {
+  resetSeed(200); // Same seed as admin dashboard
+  let txnCounter = 100;
+
+  // Generate 2-5 transactions per generated user (users 11-200)
+  for (let i = 11; i <= 200; i++) {
+    const userId = `user_${String(i).padStart(3, '0')}`;
+    const user = users.get(userId);
+    if (!user || user.state === 'CLOSED' || user.state === 'EXPIRED') continue;
+
+    const txnCount = randomInt(2, 5);
+    for (let j = 0; j < txnCount; j++) {
+      const type = pickWeighted(['pay', 'load', 'transfer'], [50, 30, 20]);
+      const merchant = type === 'pay' ? pickRandom(GEN_MERCHANTS) : null;
+
+      const amountRange = type === 'load' ? [10000, 500000]
+        : type === 'pay' ? [2000, 500000]
+        : [5000, 200000];
+      const amountPaise = BigInt(randomInt(amountRange[0], amountRange[1]));
+
+      const status = pickWeighted(['success', 'success', 'success', 'failed', 'pending'], [40, 30, 15, 10, 5]);
+      const dayOffset = randomInt(0, 89);
+
+      const description = type === 'load'
+        ? pickRandom(['Wallet top-up via UPI', 'Wallet top-up via NEFT', 'Wallet top-up via Debit Card', `P2P from ${genName()}`])
+        : type === 'transfer'
+          ? `P2P transfer to ${genName()}`
+          : `${merchant}${pickRandom([' - Order', ' Payment', '', ' Purchase', ' - Bill'])}`;
+
+      const txnId = `txn_${String(txnCounter++).padStart(3, '0')}`;
+      transactions.push({
+        txn_id: txnId,
+        user_id: userId,
+        type,
+        amount_paise: amountPaise,
+        merchant,
+        description,
+        timestamp: daysAgo(dayOffset),
+        status,
+        flagged: seededRandom() < 0.02, // 2% flagged
+        flag_reason: null,
+        flagged_at: null,
+      });
+    }
+  }
+
+  // Flag the randomly flagged transactions with reasons
+  for (const t of transactions) {
+    if (t.flagged && !t.flag_reason) {
+      t.flag_reason = pickRandom([
+        'High-value transaction — exceeds normal pattern',
+        'Velocity alert — multiple transactions in short period',
+        'Suspicious merchant pattern',
+        'Amount exceeds RBI PPI limit threshold',
+        'New merchant with unusually large payment',
+      ]);
+      t.flagged_at = now().toISOString();
+    }
+  }
+})();
 
 // ── Disputes ─────────────────────────────────────────────────────────────────
 let nextDisputeId = 1;
@@ -381,6 +550,29 @@ const MERCHANT_CATEGORIES = {
   'Shankari Restaurant': 'Food & Dining',
   'Tea Stall': 'Food & Dining',
   'MSEB': 'Utilities',
+  'Blinkit': 'Groceries',
+  'D-Mart': 'Groceries',
+  'PVR Cinemas': 'Entertainment',
+  'Rapido': 'Travel',
+  'PharmEasy': 'Health',
+  '1mg': 'Health',
+  'Udemy': 'Education',
+  'BESCOM': 'Utilities',
+  'Vi': 'Utilities',
+  'Tata Play': 'Entertainment',
+  'Hotstar': 'Entertainment',
+  'HP Petrol': 'Fuel',
+  'IOCL': 'Fuel',
+  'Shell': 'Fuel',
+  'Bajaj Finserv': 'Bill Payment',
+  'HDFC Life': 'Insurance',
+  'ICICI Lombard': 'Insurance',
+  'Star Health': 'Insurance',
+  'Dominos': 'Food & Dining',
+  'McDonalds': 'Food & Dining',
+  'Croma': 'Shopping',
+  'Nykaa': 'Shopping',
+  'Decathlon': 'Shopping',
 };
 
 function getCategory(txn) {
