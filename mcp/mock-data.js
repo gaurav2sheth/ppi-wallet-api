@@ -953,6 +953,7 @@ export function getUserProfile(userId, { include_limits = false } = {}) {
       ...(monthlySpentPaise >= limits.monthly * 0.8 ? [`Monthly limit ${((monthlySpentPaise / limits.monthly) * 100).toFixed(0)}% utilized`] : []),
       ...(Number(user.balance_paise) >= limits.max_balance * 0.8 ? [`Balance at ${((Number(user.balance_paise) / limits.max_balance) * 100).toFixed(0)}% of max`] : []),
     ];
+    result.limits_generated_at = formatIST(now().toISOString());
   }
 
   return result;
@@ -2070,11 +2071,18 @@ export function checkCompliance(userId, { include_risk_score = false } = {}) {
     riskScore = Math.min(riskScore, 100);
     const riskLevel = riskScore >= 60 ? 'HIGH' : riskScore >= 30 ? 'MEDIUM' : 'LOW';
 
+    result.phone = user.phone;
+    result.wallet_state = user.state || user.wallet_state || 'ACTIVE';
     result.risk_assessment = {
       risk_score: riskScore,
       risk_level: riskLevel,
       risk_factors: riskFactors.length > 0 ? riskFactors : ['No significant risk signals detected'],
     };
+    result.risk_recommendation = riskScore >= 60
+      ? 'Immediate review recommended. Consider temporary suspension pending investigation.'
+      : riskScore >= 30
+        ? 'Monitor closely. Review flagged transactions and unusual activity patterns.'
+        : 'No immediate action required. Standard monitoring sufficient.';
     result.activity_summary = {
       total_transactions: userTxns.length,
       flagged_transactions: flaggedCount,

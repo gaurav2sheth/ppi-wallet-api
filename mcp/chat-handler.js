@@ -640,7 +640,7 @@ GUIDELINES:
 - For balance questions, respond immediately from context if available.
 - For spending analysis, categories, trends → use get_spending_summary.
 - For "subscriptions" or "recurring" → use detect_recurring_payments.
-- For "how long will my money last" → use estimate_balance_runway.
+- For "how long will my money last" → use get_wallet_balance with include_runway=true.
 - Format responses with bullet points. Use bold for amounts.${contextBlock}`;
   }
 
