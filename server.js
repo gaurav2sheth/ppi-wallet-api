@@ -3,6 +3,7 @@ import cors from 'cors';
 import Anthropic from '@anthropic-ai/sdk';
 import { handleChat } from './mcp/chat-handler.js';
 import { runKycAlerts, previewAtRiskUsers } from './mcp/services/kyc-alert-service.js';
+import { validateLoadAmount, getBlockedAttempts } from './mcp/services/wallet-load-guard.js';
 import {
   getWalletBalance,
   getTransactionHistory,
@@ -508,6 +509,42 @@ app.post('/api/kyc-alerts/run', async (req, res) => {
     console.error('[KYC Alert Run] Error:', err?.message || err);
     res.status(502).json({ error: `KYC Alert error: ${err?.message || 'Unknown error'}` });
   }
+});
+
+// ── POST /api/wallet/validate-load ──────────────────────────────────────────
+app.post('/api/wallet/validate-load', async (req, res) => {
+  try {
+    const { user_id, amount } = req.body;
+
+    if (!user_id || typeof user_id !== 'string') {
+      return res.status(400).json({ error: 'Invalid user_id' });
+    }
+
+    const amountNum = Number(amount);
+    if (!amount || isNaN(amountNum) || amountNum < 1 || amountNum > 100000) {
+      return res.status(400).json({ error: 'Invalid amount', message: 'Amount must be between ₹1 and ₹1,00,000' });
+    }
+
+    const amountPaise = Math.round(amountNum * 100);
+    const apiKey = process.env.ANTHROPIC_API_KEY || '';
+    const result = await validateLoadAmount(user_id, amountPaise, apiKey || undefined);
+
+    if (result.allowed) {
+      res.json({ allowed: true, message: `You can add ₹${amountNum.toLocaleString('en-IN')} to your wallet`, new_balance: result.new_balance });
+    } else if (result.error) {
+      res.status(404).json(result);
+    } else {
+      res.json({ allowed: false, blocked_by: result.blocked_by, user_message: result.user_message, suggestion: result.suggestion, max_allowed: result.max_allowed });
+    }
+  } catch (err) {
+    console.error('[Load Guard] Error:', err?.message || err);
+    res.status(500).json({ error: `Validation error: ${err?.message || 'Unknown error'}` });
+  }
+});
+
+// ── GET /api/wallet/load-guard-log ─────────────────────────────────────────
+app.get('/api/wallet/load-guard-log', (_req, res) => {
+  res.json({ attempts: getBlockedAttempts() });
 });
 
 // ── Start ────────────────────────────────────────────────────────────────────
