@@ -2380,3 +2380,226 @@ export function getMonthlyTrends({ months = 3 } = {}) {
     generated_at: formatIST(now().toISOString()),
   };
 }
+
+// ── KYC Expiry Tools ──────────────────────────────────────────────
+
+export function getKycExpiringUsers({ days_ahead = 90, include_expired = false, urgency, sort_by = 'expiry_date' } = {}) {
+  const allUsers = [...users.values()];
+  const today = now();
+
+  const results = allUsers
+    .map(u => {
+      // Only MINIMUM KYC users have expiry (365 days from creation)
+      if (u.kyc_tier !== 'MINIMUM') return null;
+      const created = new Date(u.created_at || today.toISOString());
+      const expiry = new Date(created.getTime() + 365 * 24 * 60 * 60 * 1000);
+      const daysUntil = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+
+      let urgencyBand;
+      if (daysUntil < 0) urgencyBand = 'expired';
+      else if (daysUntil <= 7) urgencyBand = 'critical';
+      else if (daysUntil <= 30) urgencyBand = 'warning';
+      else if (daysUntil <= 90) urgencyBand = 'upcoming';
+      else urgencyBand = 'safe';
+
+      return {
+        user_id: u.user_id,
+        name: u.name,
+        phone: u.phone,
+        wallet_id: u.wallet_id || u.user_id,
+        kyc_tier: u.kyc_tier,
+        kyc_state: u.kyc_state,
+        wallet_state: u.state || u.wallet_state || 'ACTIVE',
+        balance_paise: (u.balance_paise ?? 0n).toString(),
+        created_at: formatIST(created.toISOString()),
+        expiry_date: formatIST(expiry.toISOString()),
+        days_until_expiry: daysUntil,
+        urgency: urgencyBand,
+        is_expired: daysUntil < 0,
+      };
+    })
+    .filter(u => {
+      if (!u) return false;
+      if (!include_expired && u.is_expired) return false;
+      if (urgency && u.urgency !== urgency) return false;
+      if (!include_expired && u.days_until_expiry > days_ahead) return false;
+      return true;
+    });
+
+  if (sort_by === 'expiry_date') results.sort((a, b) => a.days_until_expiry - b.days_until_expiry);
+  else if (sort_by === 'balance') results.sort((a, b) => BigInt(b.balance_paise) > BigInt(a.balance_paise) ? 1 : -1);
+  else if (sort_by === 'name') results.sort((a, b) => a.name.localeCompare(b.name));
+
+  const summary = {
+    expired: results.filter(u => u.urgency === 'expired').length,
+    critical: results.filter(u => u.urgency === 'critical').length,
+    warning: results.filter(u => u.urgency === 'warning').length,
+    upcoming: results.filter(u => u.urgency === 'upcoming').length,
+  };
+
+  return {
+    total: results.length,
+    summary,
+    users: results,
+    filters: { days_ahead, include_expired, urgency, sort_by },
+    generated_at: formatIST(now().toISOString()),
+  };
+}
+
+export function queryKycExpiry({ from_date, to_date, kyc_state, wallet_state, min_balance, include_inactive = false, limit = 50 } = {}) {
+  const allUsers = [...users.values()];
+  const today = now();
+
+  const results = allUsers
+    .map(u => {
+      if (u.kyc_tier !== 'MINIMUM') return null;
+      const created = new Date(u.created_at || today.toISOString());
+      const expiry = new Date(created.getTime() + 365 * 24 * 60 * 60 * 1000);
+      const daysUntil = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+
+      return {
+        user_id: u.user_id,
+        name: u.name,
+        phone: u.phone,
+        wallet_id: u.wallet_id || u.user_id,
+        kyc_tier: u.kyc_tier,
+        kyc_state: u.kyc_state,
+        wallet_state: u.state || u.wallet_state || 'ACTIVE',
+        balance_paise: (u.balance_paise ?? 0n).toString(),
+        is_active: (u.state || u.wallet_state || 'ACTIVE') === 'ACTIVE',
+        created_at: formatIST(created.toISOString()),
+        expiry_date: formatIST(expiry.toISOString()),
+        days_until_expiry: daysUntil,
+        last_activity_at: u.last_activity_at ? formatIST(u.last_activity_at) : null,
+      };
+    })
+    .filter(u => {
+      if (!u) return false;
+      if (!include_inactive && !u.is_active) return false;
+      if (kyc_state && u.kyc_state !== kyc_state) return false;
+      if (wallet_state && u.wallet_state !== wallet_state) return false;
+      if (min_balance && BigInt(u.balance_paise) < BigInt(min_balance)) return false;
+      if (from_date) {
+        const fromD = new Date(from_date);
+        const expD = new Date(u.expiry_date);
+        if (expD < fromD) return false;
+      }
+      if (to_date) {
+        const toD = new Date(to_date);
+        const expD = new Date(u.expiry_date);
+        if (expD > toD) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => a.days_until_expiry - b.days_until_expiry);
+
+  const limited = results.slice(0, limit);
+
+  const aggregation = {
+    total_matched: results.length,
+    total_balance_paise: results.reduce((s, u) => s + BigInt(u.balance_paise), 0n).toString(),
+    avg_days_to_expiry: results.length > 0 ? Math.round(results.reduce((s, u) => s + u.days_until_expiry, 0) / results.length) : 0,
+    by_kyc_state: {},
+    by_wallet_state: {},
+  };
+  results.forEach(u => {
+    aggregation.by_kyc_state[u.kyc_state] = (aggregation.by_kyc_state[u.kyc_state] || 0) + 1;
+    aggregation.by_wallet_state[u.wallet_state] = (aggregation.by_wallet_state[u.wallet_state] || 0) + 1;
+  });
+
+  return {
+    query: { from_date, to_date, kyc_state, wallet_state, min_balance, include_inactive, limit },
+    aggregation,
+    results: limited,
+    has_more: results.length > limit,
+    generated_at: formatIST(now().toISOString()),
+  };
+}
+
+export function generateKycRenewalReport({ days_ahead = 90, report_format = 'detailed' } = {}) {
+  const allUsers = [...users.values()];
+  const today = now();
+
+  const minKycUsers = allUsers
+    .filter(u => u.kyc_tier === 'MINIMUM')
+    .map(u => {
+      const created = new Date(u.created_at || today.toISOString());
+      const expiry = new Date(created.getTime() + 365 * 24 * 60 * 60 * 1000);
+      const daysUntil = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+      return { ...u, expiry, daysUntil, balance_str: (u.balance_paise ?? 0n).toString() };
+    });
+
+  const expired = minKycUsers.filter(u => u.daysUntil < 0);
+  const critical = minKycUsers.filter(u => u.daysUntil >= 0 && u.daysUntil <= 7);
+  const warning = minKycUsers.filter(u => u.daysUntil > 7 && u.daysUntil <= 30);
+  const upcoming = minKycUsers.filter(u => u.daysUntil > 30 && u.daysUntil <= days_ahead);
+  const safe = minKycUsers.filter(u => u.daysUntil > days_ahead);
+
+  const fullKycUsers = allUsers.filter(u => u.kyc_tier === 'FULL');
+  const pendingUpgrade = allUsers.filter(u => u.kyc_state === 'FULL_KYC_PENDING');
+
+  const totalAtRisk = expired.length + critical.length + warning.length;
+  const atRiskBalance = [...expired, ...critical, ...warning]
+    .reduce((s, u) => s + (u.balance_paise ?? 0n), 0n);
+
+  const formatUser = u => ({
+    user_id: u.user_id,
+    name: u.name,
+    phone: u.phone,
+    wallet_id: u.wallet_id || u.user_id,
+    balance_paise: u.balance_str,
+    expiry_date: formatIST(u.expiry.toISOString()),
+    days_until_expiry: u.daysUntil,
+    wallet_state: u.state || u.wallet_state || 'ACTIVE',
+  });
+
+  const report = {
+    report_title: 'KYC Renewal Compliance Report',
+    report_date: formatIST(today.toISOString()),
+    report_period: `Next ${days_ahead} days`,
+
+    executive_summary: {
+      total_minimum_kyc_users: minKycUsers.length,
+      total_full_kyc_users: fullKycUsers.length,
+      pending_upgrades: pendingUpgrade.length,
+      users_at_risk: totalAtRisk,
+      at_risk_balance_paise: atRiskBalance.toString(),
+      compliance_rate: minKycUsers.length > 0
+        ? `${(((minKycUsers.length - totalAtRisk) / minKycUsers.length) * 100).toFixed(1)}%`
+        : '100%',
+    },
+
+    urgency_breakdown: {
+      expired: { count: expired.length, users: report_format === 'detailed' ? expired.map(formatUser) : undefined },
+      critical_7_days: { count: critical.length, users: report_format === 'detailed' ? critical.map(formatUser) : undefined },
+      warning_30_days: { count: warning.length, users: report_format === 'detailed' ? warning.map(formatUser) : undefined },
+      upcoming: { count: upcoming.length, users: report_format === 'detailed' ? upcoming.map(formatUser) : undefined },
+      safe: { count: safe.length },
+    },
+
+    financial_impact: {
+      total_at_risk_balance: atRiskBalance.toString(),
+      expired_balance: expired.reduce((s, u) => s + (u.balance_paise ?? 0n), 0n).toString(),
+      critical_balance: critical.reduce((s, u) => s + (u.balance_paise ?? 0n), 0n).toString(),
+      warning_balance: warning.reduce((s, u) => s + (u.balance_paise ?? 0n), 0n).toString(),
+    },
+
+    compliance_status: {
+      rbi_mandate: 'RBI mandates full KYC within 12 months of wallet activation for MINIMUM KYC users',
+      action_required: totalAtRisk > 0,
+      risk_level: expired.length > 0 ? 'HIGH' : critical.length > 0 ? 'MEDIUM' : 'LOW',
+    },
+
+    recommendations: [
+      ...(expired.length > 0 ? [`URGENT: ${expired.length} users have expired KYC — initiate immediate outreach and consider wallet restrictions per RBI guidelines`] : []),
+      ...(critical.length > 0 ? [`HIGH PRIORITY: ${critical.length} users expire within 7 days — send SMS + push notification reminders`] : []),
+      ...(warning.length > 0 ? [`MODERATE: ${warning.length} users expire within 30 days — begin email + in-app nudge campaigns`] : []),
+      ...(upcoming.length > 0 ? [`PROACTIVE: ${upcoming.length} users expire within ${days_ahead} days — schedule renewal reminders`] : []),
+      pendingUpgrade.length > 0 ? `${pendingUpgrade.length} users have pending KYC upgrade requests — expedite review` : null,
+    ].filter(Boolean),
+
+    generated_at: formatIST(now().toISOString()),
+  };
+
+  return report;
+}

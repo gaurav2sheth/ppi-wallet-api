@@ -29,6 +29,7 @@ import {
   getNotifications, setAlertThreshold,
   approveKyc, rejectKyc, requestKycUpgrade,
   getMerchantInsights, getPeakUsage, getMonthlyTrends,
+  getKycExpiringUsers, queryKycExpiry, generateKycRenewalReport,
 } from './mock-data.js';
 
 // ── Tool definitions matching the MCP server schema ──────────────────────────
@@ -417,6 +418,49 @@ const TOOLS = [
       required: [],
     },
   },
+  {
+    name: 'get_kyc_expiring_users',
+    description: 'Filter users by KYC expiration date. Shows urgency bands (expired, critical ≤7d, warning ≤30d, upcoming ≤90d). Use for "expiring KYC", "KYC renewals due".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        days_ahead: { type: 'number', description: 'Look-ahead window in days', default: 90 },
+        include_expired: { type: 'boolean', description: 'Include already-expired users', default: false },
+        urgency: { type: 'string', enum: ['expired', 'critical', 'warning', 'upcoming'], description: 'Filter by urgency band' },
+        sort_by: { type: 'string', enum: ['expiry_date', 'balance', 'name'], description: 'Sort order', default: 'expiry_date' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'query_kyc_expiry',
+    description: 'Database-style query for KYC expiry info with date ranges, state filters, balance thresholds, and aggregations. Use for "KYC expiry between dates", "expiry database query".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        from_date: { type: 'string', description: 'Start date for expiry range (ISO format)' },
+        to_date: { type: 'string', description: 'End date for expiry range (ISO format)' },
+        kyc_state: { type: 'string', description: 'Filter by KYC state' },
+        wallet_state: { type: 'string', description: 'Filter by wallet state' },
+        min_balance: { type: 'string', description: 'Minimum balance in paise' },
+        include_inactive: { type: 'boolean', description: 'Include inactive wallets', default: false },
+        limit: { type: 'number', description: 'Max results', default: 50 },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'generate_kyc_renewal_report',
+    description: 'Comprehensive KYC renewal compliance report with executive summary, financial impact, urgency breakdown, and RBI recommendations. Use for "KYC report", "compliance audit", "renewal report".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        days_ahead: { type: 'number', description: 'Look-ahead window for renewals', default: 90 },
+        report_format: { type: 'string', enum: ['summary', 'detailed'], description: 'Report detail level', default: 'detailed' },
+      },
+      required: [],
+    },
+  },
 ];
 
 // ── Execute a tool call against the mock data layer ──────────────────────────
@@ -547,6 +591,31 @@ function executeTool(name, input) {
     }
     case 'get_monthly_trends': {
       return getMonthlyTrends({ months: input.months ?? 3 });
+    }
+    case 'get_kyc_expiring_users': {
+      return getKycExpiringUsers({
+        days_ahead: input.days_ahead ?? 90,
+        include_expired: input.include_expired ?? false,
+        urgency: input.urgency,
+        sort_by: input.sort_by ?? 'expiry_date',
+      });
+    }
+    case 'query_kyc_expiry': {
+      return queryKycExpiry({
+        from_date: input.from_date,
+        to_date: input.to_date,
+        kyc_state: input.kyc_state,
+        wallet_state: input.wallet_state,
+        min_balance: input.min_balance,
+        include_inactive: input.include_inactive ?? false,
+        limit: input.limit ?? 50,
+      });
+    }
+    case 'generate_kyc_renewal_report': {
+      return generateKycRenewalReport({
+        days_ahead: input.days_ahead ?? 90,
+        report_format: input.report_format ?? 'detailed',
+      });
     }
     default:
       return { error: `Unknown tool: ${name}` };

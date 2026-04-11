@@ -36,7 +36,7 @@ app.use(express.json());
 
 // ── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, tools: 37, version: '1.0.0' });
+  res.json({ ok: true, tools: 40, version: '1.0.0' });
 });
 
 // ── POST /api/chat ───────────────────────────────────────────────────────────
