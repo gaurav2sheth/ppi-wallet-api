@@ -30,6 +30,9 @@ function paisaToRupees(paise) {
   return (Number(paise) / 100).toFixed(2);
 }
 
+// ── KYC States: UNVERIFIED → MIN_KYC → FULL_KYC_PENDING → FULL_KYC / REJECTED / SUSPENDED
+// kyc_tier is the RBI classification (MINIMUM/FULL), kyc_state is the verification workflow state
+
 // ── 10 Wallet Users ──────────────────────────────────────────────────────────
 const users = new Map([
   ['user_001', {
@@ -39,6 +42,14 @@ const users = new Map([
     balance_paise: 23611n,     // ₹236.11 (matches wallet app)
     held_paise: 0n,
     kyc_tier: 'FULL',
+    kyc_state: 'FULL_KYC',
+    aadhaar_verified: true,
+    pan_masked: 'ABCDE****F',
+    ckyc_number: 'CKYC-12345678',
+    wallet_expiry_date: null,   // FULL KYC — no expiry
+    rejected_reason: null,
+    monthly_p2p_mtd_paise: 150000n,   // ₹1,500 P2P this month
+    annual_load_ytd_paise: 2500000n,  // ₹25,000 loaded this year
     state: 'ACTIVE',
     created_at: daysAgo(90),
     last_activity_at: daysAgo(0),
@@ -50,6 +61,14 @@ const users = new Map([
     balance_paise: 875050n,    // ₹8,750.50
     held_paise: 50000n,        // ₹500 held
     kyc_tier: 'FULL',
+    kyc_state: 'FULL_KYC',
+    aadhaar_verified: true,
+    pan_masked: 'BCDEG****H',
+    ckyc_number: 'CKYC-23456789',
+    wallet_expiry_date: null,
+    rejected_reason: null,
+    monthly_p2p_mtd_paise: 250000n,
+    annual_load_ytd_paise: 1800000n,
     state: 'ACTIVE',
     created_at: daysAgo(90),
     last_activity_at: daysAgo(1),
@@ -61,6 +80,14 @@ const users = new Map([
     balance_paise: 342000n,    // ₹3,420.00
     held_paise: 0n,
     kyc_tier: 'MINIMUM',
+    kyc_state: 'MIN_KYC',
+    aadhaar_verified: false,
+    pan_masked: null,
+    ckyc_number: null,
+    wallet_expiry_date: daysAgo(-305),  // expires 305 days from now (created 60d ago, 365d expiry)
+    rejected_reason: null,
+    monthly_p2p_mtd_paise: 80000n,
+    annual_load_ytd_paise: 500000n,
     state: 'ACTIVE',
     created_at: daysAgo(60),
     last_activity_at: daysAgo(5),
@@ -72,6 +99,14 @@ const users = new Map([
     balance_paise: 15200000n,  // ₹1,52,000.00
     held_paise: 0n,
     kyc_tier: 'FULL',
+    kyc_state: 'FULL_KYC',
+    aadhaar_verified: true,
+    pan_masked: 'DEFGH****J',
+    ckyc_number: 'CKYC-34567890',
+    wallet_expiry_date: null,
+    rejected_reason: null,
+    monthly_p2p_mtd_paise: 1200000n,
+    annual_load_ytd_paise: 8000000n,
     state: 'ACTIVE',
     created_at: daysAgo(200),
     last_activity_at: daysAgo(2),
@@ -83,6 +118,14 @@ const users = new Map([
     balance_paise: 50000n,     // ₹500.00
     held_paise: 0n,
     kyc_tier: 'MINIMUM',
+    kyc_state: 'SUSPENDED',
+    aadhaar_verified: false,
+    pan_masked: null,
+    ckyc_number: null,
+    wallet_expiry_date: daysAgo(-320),
+    rejected_reason: 'KYC non-compliance — failed to complete Full KYC within stipulated time',
+    monthly_p2p_mtd_paise: 0n,
+    annual_load_ytd_paise: 100000n,
     state: 'SUSPENDED',
     created_at: daysAgo(45),
     last_activity_at: daysAgo(30),
@@ -94,6 +137,14 @@ const users = new Map([
     balance_paise: 1200000n,   // ₹12,000.00
     held_paise: 0n,
     kyc_tier: 'FULL',
+    kyc_state: 'FULL_KYC',
+    aadhaar_verified: true,
+    pan_masked: 'EFGHJ****K',
+    ckyc_number: 'CKYC-45678901',
+    wallet_expiry_date: null,
+    rejected_reason: null,
+    monthly_p2p_mtd_paise: 0n,
+    annual_load_ytd_paise: 3500000n,
     state: 'ACTIVE',
     created_at: daysAgo(150),
     last_activity_at: daysAgo(1),
@@ -105,6 +156,14 @@ const users = new Map([
     balance_paise: 180000n,    // ₹1,800.00
     held_paise: 0n,
     kyc_tier: 'MINIMUM',
+    kyc_state: 'FULL_KYC_PENDING',
+    aadhaar_verified: true,
+    pan_masked: 'FGHJK****L',
+    ckyc_number: null,         // Pending — not yet assigned
+    wallet_expiry_date: daysAgo(-335),
+    rejected_reason: null,
+    monthly_p2p_mtd_paise: 50000n,
+    annual_load_ytd_paise: 200000n,
     state: 'ACTIVE',
     created_at: daysAgo(30),
     last_activity_at: daysAgo(3),
@@ -116,6 +175,14 @@ const users = new Map([
     balance_paise: 4500000n,   // ₹45,000.00
     held_paise: 200000n,       // ₹2,000 held
     kyc_tier: 'FULL',
+    kyc_state: 'FULL_KYC',
+    aadhaar_verified: true,
+    pan_masked: 'GHJKL****M',
+    ckyc_number: 'CKYC-56789012',
+    wallet_expiry_date: null,
+    rejected_reason: null,
+    monthly_p2p_mtd_paise: 500000n,
+    annual_load_ytd_paise: 6000000n,
     state: 'ACTIVE',
     created_at: daysAgo(180),
     last_activity_at: daysAgo(0),
@@ -127,6 +194,14 @@ const users = new Map([
     balance_paise: 20000n,     // ₹200.00
     held_paise: 0n,
     kyc_tier: 'FULL',
+    kyc_state: 'FULL_KYC',
+    aadhaar_verified: true,
+    pan_masked: 'HJKLM****N',
+    ckyc_number: 'CKYC-67890123',
+    wallet_expiry_date: null,
+    rejected_reason: null,
+    monthly_p2p_mtd_paise: 0n,
+    annual_load_ytd_paise: 0n,
     state: 'DORMANT',
     created_at: daysAgo(300),
     last_activity_at: daysAgo(90),
@@ -138,6 +213,14 @@ const users = new Map([
     balance_paise: 650000n,    // ₹6,500.00
     held_paise: 0n,
     kyc_tier: 'MINIMUM',
+    kyc_state: 'REJECTED',
+    aadhaar_verified: false,
+    pan_masked: 'JKLMN****P',
+    ckyc_number: null,
+    wallet_expiry_date: daysAgo(-290),
+    rejected_reason: 'Document mismatch — Aadhaar photo does not match video KYC',
+    monthly_p2p_mtd_paise: 30000n,
+    annual_load_ytd_paise: 400000n,
     state: 'ACTIVE',
     created_at: daysAgo(75),
     last_activity_at: daysAgo(2),
@@ -225,6 +308,7 @@ export function getWalletBalance(userId) {
     held_amount: `₹${paisaToRupees(user.held_paise)}`,
     currency: 'INR',
     kyc_tier: user.kyc_tier,
+    kyc_state: user.kyc_state,
     status: user.state,
     last_updated: formatIST(user.last_activity_at),
   };
@@ -510,8 +594,16 @@ export function getUserProfile(userId) {
     name: user.name,
     phone: user.phone,
     status: user.state,
-    kyc_tier: user.kyc_tier,
-    kyc_label: limits.label,
+    kyc: {
+      tier: user.kyc_tier,
+      state: user.kyc_state,
+      label: limits.label,
+      aadhaar_verified: user.aadhaar_verified,
+      pan_masked: user.pan_masked,
+      ckyc_number: user.ckyc_number,
+      wallet_expiry_date: user.wallet_expiry_date ? formatIST(user.wallet_expiry_date) : null,
+      rejected_reason: user.rejected_reason,
+    },
     balance: `₹${paisaToRupees(user.balance_paise)}`,
     balance_paise: user.balance_paise.toString(),
     held_amount: `₹${paisaToRupees(user.held_paise)}`,
@@ -520,6 +612,10 @@ export function getUserProfile(userId) {
       daily_limit: `₹${(limits.daily / 100).toFixed(2)}`,
       monthly_limit: `₹${(limits.monthly / 100).toFixed(2)}`,
       max_balance: `₹${(limits.max_balance / 100).toFixed(2)}`,
+    },
+    limits_usage: {
+      monthly_p2p_mtd: `₹${paisaToRupees(user.monthly_p2p_mtd_paise)}`,
+      annual_load_ytd: `₹${paisaToRupees(user.annual_load_ytd_paise)}`,
     },
     account_age_days: accountAgeDays,
     created_at: formatIST(user.created_at),
@@ -654,6 +750,8 @@ export function listUsers() {
     user_id: u.user_id,
     name: u.name,
     status: u.state,
+    kyc_tier: u.kyc_tier,
+    kyc_state: u.kyc_state,
     balance: `₹${paisaToRupees(u.balance_paise)}`,
   }));
 }
@@ -992,7 +1090,7 @@ export function getSystemStats() {
   };
 }
 
-export function searchUsers({ query, kyc_tier, status, min_balance, max_balance, limit, offset = 0 } = {}) {
+export function searchUsers({ query, kyc_tier, kyc_state, status, min_balance, max_balance, limit, offset = 0 } = {}) {
   let results = Array.from(users.values());
 
   if (query) {
@@ -1004,6 +1102,7 @@ export function searchUsers({ query, kyc_tier, status, min_balance, max_balance,
     );
   }
   if (kyc_tier) results = results.filter(u => u.kyc_tier === kyc_tier.toUpperCase());
+  if (kyc_state) results = results.filter(u => u.kyc_state === kyc_state.toUpperCase());
   if (status) results = results.filter(u => u.state === status.toUpperCase());
   if (min_balance !== undefined && min_balance !== null) {
     results = results.filter(u => Number(u.balance_paise) >= Math.round(min_balance * 100));
@@ -1033,6 +1132,8 @@ export function searchUsers({ query, kyc_tier, status, min_balance, max_balance,
       phone: u.phone,
       balance: `₹${paisaToRupees(u.balance_paise)}`,
       kyc_tier: u.kyc_tier,
+      kyc_state: u.kyc_state,
+      aadhaar_verified: u.aadhaar_verified,
       status: u.state,
       created_at: formatIST(u.created_at),
       last_activity: formatIST(u.last_activity_at),
@@ -1257,6 +1358,81 @@ export function getFailedTransactions({ days = 30, include_pending = false, limi
     total_count: totalCount,
     total_returned: failed.length,
     transactions: failed,
+    generated_at: formatIST(now().toISOString()),
+  };
+}
+
+/**
+ * Get KYC statistics across all users.
+ * Returns distribution by state, pending queue, success/failure rates.
+ */
+export function getKycStats() {
+  const allUsers = Array.from(users.values());
+  const total = allUsers.length;
+
+  // Distribution by kyc_state
+  const stateCounts = {};
+  for (const u of allUsers) {
+    stateCounts[u.kyc_state] = (stateCounts[u.kyc_state] || 0) + 1;
+  }
+  const distribution = Object.entries(stateCounts).map(([state, count]) => ({
+    state,
+    count,
+    percentage: Number(((count / total) * 100).toFixed(1)),
+  }));
+
+  // Tier breakdown
+  const fullKycUsers = allUsers.filter(u => u.kyc_state === 'FULL_KYC').length;
+  const minKycUsers = allUsers.filter(u => u.kyc_state === 'MIN_KYC').length;
+  const pendingUsers = allUsers.filter(u => u.kyc_state === 'FULL_KYC_PENDING');
+  const rejectedUsers = allUsers.filter(u => u.kyc_state === 'REJECTED');
+  const suspendedKyc = allUsers.filter(u => u.kyc_state === 'SUSPENDED');
+
+  // Pending KYC queue
+  const pendingQueue = pendingUsers.map(u => ({
+    user_id: u.user_id,
+    name: u.name,
+    phone: u.phone,
+    current_state: u.kyc_state,
+    aadhaar_verified: u.aadhaar_verified,
+    pan_masked: u.pan_masked,
+    requested_tier: 'FULL',
+    submitted_at: formatIST(u.last_activity_at),
+  }));
+
+  // Expiring wallets (MINIMUM KYC with expiry within 30 days)
+  const expiringCutoff = new Date(now());
+  expiringCutoff.setDate(expiringCutoff.getDate() + 30);
+  const expiringWallets = allUsers
+    .filter(u => u.wallet_expiry_date && new Date(u.wallet_expiry_date) <= expiringCutoff)
+    .map(u => ({
+      user_id: u.user_id,
+      name: u.name,
+      kyc_tier: u.kyc_tier,
+      expiry_date: formatIST(u.wallet_expiry_date),
+      days_until_expiry: Math.ceil((new Date(u.wallet_expiry_date).getTime() - now().getTime()) / (1000 * 60 * 60 * 24)),
+    }));
+
+  return {
+    total_users: total,
+    distribution,
+    tier_breakdown: {
+      FULL: allUsers.filter(u => u.kyc_tier === 'FULL').length,
+      MINIMUM: allUsers.filter(u => u.kyc_tier === 'MINIMUM').length,
+    },
+    success_rate: Number(((fullKycUsers / total) * 100).toFixed(1)),
+    failure_rate: Number(((rejectedUsers.length / total) * 100).toFixed(1)),
+    pending_count: pendingUsers.length,
+    pending_queue: pendingQueue,
+    rejected_count: rejectedUsers.length,
+    rejected_users: rejectedUsers.map(u => ({
+      user_id: u.user_id,
+      name: u.name,
+      reason: u.rejected_reason,
+    })),
+    suspended_count: suspendedKyc.length,
+    expiring_wallets: expiringWallets,
+    avg_verification_minutes: 12,  // simulated
     generated_at: formatIST(now().toISOString()),
   };
 }
