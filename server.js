@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import Anthropic from '@anthropic-ai/sdk';
 import { handleChat } from './mcp/chat-handler.js';
+import { runKycAlerts, previewAtRiskUsers } from './mcp/services/kyc-alert-service.js';
 import {
   getWalletBalance,
   getTransactionHistory,
@@ -480,6 +481,32 @@ app.post('/api/wallet/transact', (req, res) => {
   } catch (err) {
     console.error('[Transact] Error:', err?.message || err);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /api/kyc-alerts/preview ──────────────────────────────────────────────
+app.get('/api/kyc-alerts/preview', (_req, res) => {
+  try {
+    const preview = previewAtRiskUsers();
+    res.json(preview);
+  } catch (err) {
+    console.error('[KYC Alert Preview] Error:', err?.message || err);
+    res.status(500).json({ error: `Preview error: ${err?.message || 'Unknown error'}` });
+  }
+});
+
+// ── POST /api/kyc-alerts/run ────────────────────────────────────────────────
+app.post('/api/kyc-alerts/run', async (req, res) => {
+  try {
+    const apiKey = process.env.ANTHROPIC_API_KEY || '';
+    if (!apiKey) {
+      return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured.' });
+    }
+    const result = await runKycAlerts(apiKey);
+    res.json(result);
+  } catch (err) {
+    console.error('[KYC Alert Run] Error:', err?.message || err);
+    res.status(502).json({ error: `KYC Alert error: ${err?.message || 'Unknown error'}` });
   }
 });
 
