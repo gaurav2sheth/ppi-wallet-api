@@ -334,6 +334,116 @@ const users = new Map([
   }
 })();
 
+// ── KYC Expiry Test Users (override generated users for KYC Upgrade Agent testing) ──
+// These 5 users have MIN_KYC expiring within 7 days with varying profiles.
+// queryKycExpiry calculates expiry as created_at + 365 days, so created_at = daysAgo(365 - N)
+// for N days until expiry.
+
+// P1: KYC expiring in 1 day, high balance, DORMANT (0 txns in 30 days) → urgent escalation + SMS
+users.set('user_196', {
+  user_id: 'user_196',
+  name: 'Kavita Thakur',
+  phone: '+91-9871234501',
+  balance_paise: 4800000n,    // ₹48,000.00
+  held_paise: 0n,
+  kyc_tier: 'MINIMUM',
+  kyc_state: 'MIN_KYC',
+  aadhaar_verified: false,
+  pan_masked: null,
+  ckyc_number: null,
+  wallet_expiry_date: daysAgo(-1),
+  rejected_reason: null,
+  monthly_p2p_mtd_paise: 0n,
+  annual_load_ytd_paise: 850000n,
+  state: 'DORMANT',
+  created_at: daysAgo(364),   // expires in 1 day
+  last_activity_at: daysAgo(45),
+});
+
+// P2: KYC expiring in 3 days, medium balance, HIGH activity (>10 txns) → standard outreach + cashback
+users.set('user_197', {
+  user_id: 'user_197',
+  name: 'Nikhil Bansal',
+  phone: '+91-9871234502',
+  balance_paise: 1200000n,    // ₹12,000.00
+  held_paise: 25000n,         // ₹250 held
+  kyc_tier: 'MINIMUM',
+  kyc_state: 'MIN_KYC',
+  aadhaar_verified: false,
+  pan_masked: null,
+  ckyc_number: null,
+  wallet_expiry_date: daysAgo(-3),
+  rejected_reason: null,
+  monthly_p2p_mtd_paise: 60000n,
+  annual_load_ytd_paise: 600000n,
+  state: 'ACTIVE',
+  created_at: daysAgo(362),   // expires in 3 days
+  last_activity_at: daysAgo(0),
+});
+
+// P3: KYC expiring in 5 days, low-medium balance, MEDIUM activity → gentle reminder
+users.set('user_198', {
+  user_id: 'user_198',
+  name: 'Simran Kapoor',
+  phone: '+91-9871234503',
+  balance_paise: 350000n,     // ₹3,500.00
+  held_paise: 0n,
+  kyc_tier: 'MINIMUM',
+  kyc_state: 'MIN_KYC',
+  aadhaar_verified: false,
+  pan_masked: null,
+  ckyc_number: null,
+  wallet_expiry_date: daysAgo(-5),
+  rejected_reason: null,
+  monthly_p2p_mtd_paise: 20000n,
+  annual_load_ytd_paise: 300000n,
+  state: 'ACTIVE',
+  created_at: daysAgo(360),   // expires in 5 days
+  last_activity_at: daysAgo(3),
+});
+
+// P4: KYC expiring in 7 days, very low balance, DORMANT → monitor only
+users.set('user_199', {
+  user_id: 'user_199',
+  name: 'Rajesh Yadav',
+  phone: '+91-9871234504',
+  balance_paise: 35000n,      // ₹350.00
+  held_paise: 0n,
+  kyc_tier: 'MINIMUM',
+  kyc_state: 'MIN_KYC',
+  aadhaar_verified: false,
+  pan_masked: null,
+  ckyc_number: null,
+  wallet_expiry_date: daysAgo(-7),
+  rejected_reason: null,
+  monthly_p2p_mtd_paise: 0n,
+  annual_load_ytd_paise: 50000n,
+  state: 'DORMANT',
+  created_at: daysAgo(358),   // expires in 7 days
+  last_activity_at: daysAgo(60),
+});
+
+// P5: KYC expiring in 2 days, moderate balance, ACTIVE, already submitted upgrade → FULL_KYC_PENDING
+users.set('user_200', {
+  user_id: 'user_200',
+  name: 'Diya Mishra',
+  phone: '+91-9871234505',
+  balance_paise: 750000n,     // ₹7,500.00
+  held_paise: 0n,
+  kyc_tier: 'MINIMUM',
+  kyc_state: 'FULL_KYC_PENDING',
+  aadhaar_verified: true,
+  pan_masked: 'ABCDE****G',
+  ckyc_number: null,
+  wallet_expiry_date: daysAgo(-2),
+  rejected_reason: null,
+  monthly_p2p_mtd_paise: 40000n,
+  annual_load_ytd_paise: 400000n,
+  state: 'ACTIVE',
+  created_at: daysAgo(363),   // expires in 2 days
+  last_activity_at: daysAgo(1),
+});
+
 // ── 40 Transactions across users and last 90 days ────────────────────────────
 const transactions = [
   // user_001 (Gaurav Sheth) — 11 transactions matching wallet app seed data

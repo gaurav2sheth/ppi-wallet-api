@@ -10,6 +10,8 @@
  *   node wallet-mcp-server.js
  */
 
+import { runKycUpgradeAgent, getAgentRunHistory, getActiveNotifications, getNotificationsByUser, markNotificationRead, markNotificationActionTaken, observeUserResponse, handleFollowUpOrEscalation, addNotification } from './agents/kyc-upgrade-agent.js';
+import { escalateToOps, getEscalations, resolveEscalation, updateEscalationStatus, getEscalationStats } from './agents/escalation-manager.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';  // Bundled with @modelcontextprotocol/sdk
@@ -933,7 +935,306 @@ server.tool(
   }
 );
 
-// ── Start the server over stdio transport ─────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// TOOL 36: get_sub_wallets
+// ═══════════════════════════════════════════════════════════════════════════════
+import {
+  getSubWallets as _getSubWallets,
+  loadSubWallet as _loadSubWallet,
+  spendFromSubWallet as _spendFromSubWallet,
+  validateMerchantEligibility as _validateMerchantEligibility,
+} from './services/sub-wallet-service.js';
+
+server.tool(
+  'get_sub_wallets',
+  'Get all sub-wallet balances and status for a user. Use when asked about food wallet, travel wallet, FASTag, gift or fuel balance, or benefits wallets.',
+  {
+    user_id: z.string().describe('Unique wallet user ID (e.g. user_001)'),
+  },
+  async ({ user_id }) => {
+    try {
+      const result = _getSubWallets(user_id);
+      if (!result) {
+        return { content: [{ type: 'text', text: JSON.stringify({ error: 'User not found', user_id }, null, 2) }] };
+      }
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    } catch (err) {
+      return { content: [{ type: 'text', text: JSON.stringify({ error: 'Internal server error', message: err.message, user_id }, null, 2) }], isError: true };
+    }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TOOL 37: load_sub_wallet
+// ═══════════════════════════════════════════════════════════════════════════════
+server.tool(
+  'load_sub_wallet',
+  'Load a specific sub-wallet for a user on behalf of an employer or issuer. Use for food, transit, FASTag, gift, or fuel wallet loading.',
+  {
+    employer_id: z.string().describe('Employer or issuer ID (e.g. employer_001)'),
+    user_id: z.string().describe('User ID to load the sub-wallet for'),
+    type: z.enum(['FOOD', 'NCMC TRANSIT', 'FASTAG', 'GIFT', 'FUEL']).describe('Sub-wallet type'),
+    amount: z.number().describe('Amount to load in paise'),
+    occasion: z.string().optional().describe('Occasion for the load (e.g. Monthly Benefits, Diwali Bonus)'),
+  },
+  async ({ employer_id, user_id, type, amount, occasion }) => {
+    try {
+      const result = _loadSubWallet(employer_id, user_id, type, amount, occasion);
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    } catch (err) {
+      return { content: [{ type: 'text', text: JSON.stringify({ error: 'Internal server error', message: err.message }, null, 2) }], isError: true };
+    }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TOOL 38: get_sub_wallet_transactions
+// ═══════════════════════════════════════════════════════════════════════════════
+server.tool(
+  'get_sub_wallet_transactions',
+  'Get transaction history for a specific sub-wallet type. Use when asked about food wallet transactions, transit spending, etc.',
+  {
+    user_id: z.string().describe('Unique wallet user ID'),
+    type: z.enum(['FOOD', 'NCMC TRANSIT', 'FASTAG', 'GIFT', 'FUEL']).describe('Sub-wallet type'),
+    days: z.number().default(30).describe('Number of past days to fetch'),
+  },
+  async ({ user_id, type, days }) => {
+    try {
+      const subWalletResult = _getSubWallets(user_id);
+      if (!subWalletResult) {
+        return { content: [{ type: 'text', text: JSON.stringify({ error: 'User not found', user_id }, null, 2) }] };
+      }
+      const sw = subWalletResult.sub_wallets.find(s => s.type === type);
+      if (!sw) {
+        return { content: [{ type: 'text', text: JSON.stringify({ error: `No ${type} sub-wallet found for user`, user_id, type }, null, 2) }] };
+      }
+
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+      const txns = (sw.recent_transactions || []).filter(t => new Date(t.timestamp) >= cutoff);
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            user_id,
+            sub_wallet_type: type,
+            balance: sw.balance,
+            balance_paise: sw.balance_paise,
+            transactions: txns,
+            transaction_count: txns.length,
+          }, null, 2),
+        }],
+      };
+    } catch (err) {
+      return { content: [{ type: 'text', text: JSON.stringify({ error: 'Internal server error', message: err.message }, null, 2) }], isError: true };
+    }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TOOL 39: check_merchant_eligibility
+// ═══════════════════════════════════════════════════════════════════════════════
+server.tool(
+  'check_merchant_eligibility',
+  'Check if a merchant category is eligible for a specific sub-wallet type. Use when asked "can I use my food wallet at..." or "where can I use my transit wallet?".',
+  {
+    merchant_category: z.string().describe('Merchant category (e.g. Food & Dining, Fuel, Transit)'),
+    sub_wallet_type: z.enum(['FOOD', 'NCMC TRANSIT', 'FASTAG', 'GIFT', 'FUEL']).describe('Sub-wallet type to check'),
+  },
+  async ({ merchant_category, sub_wallet_type }) => {
+    try {
+      const result = _validateMerchantEligibility(merchant_category, sub_wallet_type);
+      return { content: [{ type: 'text', text: JSON.stringify({ merchant_category, sub_wallet_type, ...result }, null, 2) }] };
+    } catch (err) {
+      return { content: [{ type: 'text', text: JSON.stringify({ error: 'Internal server error', message: err.message }, null, 2) }], isError: true };
+    }
+  }
+);
+
+// ── Start the server over stdio transport ────────────────────────────────��────
+// ═══════════════════════════════════════════════════════════════════════════════
+// TOOL 40: send_kyc_notification
+// ═══════════════════════════════════════════════════════════════════════════════
+server.tool(
+  'send_kyc_notification',
+  'Send a KYC upgrade notification to a user via specified channel (sms, in_app). ' +
+  'Use this when the agent needs to nudge a user to complete their KYC upgrade.',
+  {
+    user_id: z.string().describe('User ID'),
+    channel: z.enum(['sms', 'in_app']).describe('Notification channel'),
+    title: z.string().describe('Notification title'),
+    message: z.string().describe('Notification message body'),
+    notification_type: z.string().optional().default('KYC_UPGRADE_ALERT').describe('Notification type'),
+  },
+  async ({ user_id, channel, title, message, notification_type }) => {
+    try {
+      const notification = {
+        notification_id: `NOTIF-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        user_id,
+        channel,
+        title,
+        message,
+        notification_type,
+        read: false,
+        action_taken: false,
+        sent_at: new Date().toISOString(),
+      };
+      addNotification(notification);
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({ success: true, notification_id: notification.notification_id, channel, sent_at: notification.sent_at }, null, 2),
+        }],
+      };
+    } catch (err) {
+      return { content: [{ type: 'text', text: JSON.stringify({ error: 'Internal server error', message: err.message }, null, 2) }], isError: true };
+    }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TOOL 41: check_kyc_upgrade_status
+// ═══════════════════════════════════════════════════════════════════════════════
+server.tool(
+  'check_kyc_upgrade_status',
+  'Check if a user has completed KYC upgrade since last check. ' +
+  'Use this to verify whether a previously notified user has upgraded their KYC tier.',
+  {
+    user_id: z.string().describe('User ID to check'),
+  },
+  async ({ user_id }) => {
+    try {
+      const profile = getUserProfile(user_id);
+      if (!profile) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ error: 'User not found', user_id }, null, 2),
+          }],
+        };
+      }
+      const kycType = profile.kyc?.tier || 'UNKNOWN';
+      const kycState = profile.kyc?.state || 'UNKNOWN';
+      const expiryDate = profile.kyc?.expiry_date || null;
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            user_id,
+            kyc_type: kycType,
+            kyc_state: kycState,
+            expiry_date: expiryDate,
+            is_upgraded: kycType === 'FULL_KYC',
+            checked_at: new Date().toISOString(),
+          }, null, 2),
+        }],
+      };
+    } catch (err) {
+      return { content: [{ type: 'text', text: JSON.stringify({ error: 'Internal server error', message: err.message, user_id }, null, 2) }], isError: true };
+    }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TOOL 42: grant_upgrade_reward
+// ═══════════════════════════════════════════════════════════════════════════════
+server.tool(
+  'grant_upgrade_reward',
+  'Grant a reward to a user for completing KYC upgrade. ' +
+  'Use this after confirming a user has successfully upgraded to Full KYC.',
+  {
+    user_id: z.string().describe('User ID'),
+    reward_type: z.enum(['CASHBACK_50', 'CASHBACK_100', 'BONUS_SCRATCH_CARD']).describe('Reward type'),
+    amount: z.number().optional().describe('Reward amount in paise'),
+  },
+  async ({ user_id, reward_type, amount }) => {
+    try {
+      const amountPaise = amount || (reward_type === 'CASHBACK_50' ? 5000 : reward_type === 'CASHBACK_100' ? 10000 : 0);
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            user_id,
+            reward_type,
+            amount_paise: amountPaise,
+            granted_at: new Date().toISOString(),
+          }, null, 2),
+        }],
+      };
+    } catch (err) {
+      return { content: [{ type: 'text', text: JSON.stringify({ error: 'Internal server error', message: err.message, user_id }, null, 2) }], isError: true };
+    }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TOOL 43: get_agent_escalations
+// ═══════════════════════════════════════════════════════════════════════════════
+server.tool(
+  'get_agent_escalations',
+  'Get list of KYC cases escalated by the autonomous agent for ops review. ' +
+  'Use this to see which users need manual intervention for KYC upgrades.',
+  {
+    status: z.enum(['OPEN', 'IN_PROGRESS', 'RESOLVED']).optional().describe('Filter by escalation status'),
+    priority: z.enum(['P1_CRITICAL', 'P2_HIGH', 'P3_MEDIUM', 'P4_LOW']).optional().describe('Filter by priority level'),
+  },
+  async ({ status, priority }) => {
+    try {
+      const filters = {};
+      if (status) filters.status = status;
+      if (priority) filters.priority = priority;
+      const escalations = getEscalations(filters);
+      const stats = getEscalationStats();
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({ escalations, total: escalations.length, stats }, null, 2),
+        }],
+      };
+    } catch (err) {
+      return { content: [{ type: 'text', text: JSON.stringify({ error: 'Internal server error', message: err.message }, null, 2) }], isError: true };
+    }
+  }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TOOL 44: resolve_escalation
+// ═══════════════════════════════════════════════════════════════════════════════
+server.tool(
+  'resolve_escalation',
+  'Mark an escalated KYC case as resolved by ops team. ' +
+  'Use this after an ops team member has manually addressed the escalated case.',
+  {
+    escalation_id: z.string().describe('Escalation ID'),
+    resolved_by: z.string().describe('Admin who resolved'),
+    notes: z.string().describe('Resolution notes'),
+  },
+  async ({ escalation_id, resolved_by, notes }) => {
+    try {
+      const result = resolveEscalation(escalation_id, resolved_by, notes);
+      if (!result) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({ error: 'Escalation not found', escalation_id }, null, 2),
+          }],
+        };
+      }
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(result, null, 2),
+        }],
+      };
+    } catch (err) {
+      return { content: [{ type: 'text', text: JSON.stringify({ error: 'Internal server error', message: err.message, escalation_id }, null, 2) }], isError: true };
+    }
+  }
+);
+
+// ── Start the server over stdio transport ────────────────────────────────────
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
