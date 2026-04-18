@@ -7,6 +7,8 @@ import { validateLoadAmount, getBlockedAttempts } from './mcp/services/wallet-lo
 import { getSubWallets, loadSubWallet, spendFromSubWallet, validateMerchantEligibility, getBenefitsUtilisationSummary } from './mcp/services/sub-wallet-service.js';
 import { runKycUpgradeAgent, getAgentRunHistory, getActiveNotifications, getNotificationsByUser, markNotificationRead, markNotificationActionTaken } from './mcp/agents/kyc-upgrade-agent.js';
 import { getEscalations, resolveEscalation, updateEscalationStatus, getEscalationStats } from './mcp/agents/escalation-manager.js';
+import { handleSupportChat, getSession, getSupportAnalytics } from './mcp/agents/customer-support-agent.js';
+import { getOpenTickets, getTicket, resolveTicket, getUserTickets, getTicketStats } from './mcp/agents/support-ticket-manager.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -280,6 +282,67 @@ app.get('/api/kyc-agent/audit/:runId', (req, res) => {
     actions_taken: run.actions_taken || [],
     escalations: run.escalations || [],
   });
+});
+
+// ── Customer Support Agent Routes ──────────────────────────────────────────
+
+// POST /api/support/chat — AI-powered support chat
+app.post('/api/support/chat', async (req, res) => {
+  try {
+    const { user_id, message, session_id, context } = req.body;
+    if (!message) return res.status(400).json({ error: 'message is required' });
+    const userId = user_id || 'user_001';
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const result = await handleSupportChat(userId, message, session_id, apiKey, context);
+    res.json(result);
+  } catch (err) {
+    console.error('Support chat error:', err);
+    res.status(500).json({ error: 'Support agent failed', detail: err.message });
+  }
+});
+
+// GET /api/support/tickets — List tickets with optional status/priority filters
+app.get('/api/support/tickets', (req, res) => {
+  const { status, priority } = req.query;
+  const tickets = getOpenTickets(priority);
+  const filtered = status ? tickets.filter(t => t.status === status) : tickets;
+  res.json({ tickets: filtered, total: filtered.length, stats: getTicketStats() });
+});
+
+// GET /api/support/tickets/user/:userId — Tickets for a specific user (must be before :ticketId)
+app.get('/api/support/tickets/user/:userId', (req, res) => {
+  const tickets = getUserTickets(req.params.userId);
+  res.json({ tickets, total: tickets.length });
+});
+
+// GET /api/support/tickets/:ticketId — Get a single ticket
+app.get('/api/support/tickets/:ticketId', (req, res) => {
+  const ticket = getTicket(req.params.ticketId);
+  if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+  res.json(ticket);
+});
+
+// PATCH /api/support/tickets/:ticketId — Resolve a ticket
+app.patch('/api/support/tickets/:ticketId', (req, res) => {
+  const { resolved_by, resolution_notes } = req.body;
+  if (!resolved_by || !resolution_notes) return res.status(400).json({ error: 'resolved_by and resolution_notes required' });
+  const ticket = resolveTicket(req.params.ticketId, resolved_by, resolution_notes);
+  if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+  res.json(ticket);
+});
+
+// GET /api/support/sessions/:sessionId — Get chat session details
+app.get('/api/support/sessions/:sessionId', (req, res) => {
+  const session = getSession(req.params.sessionId);
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+  res.json(session);
+});
+
+// GET /api/support/analytics — Support analytics summary
+app.get('/api/support/analytics', (req, res) => {
+  const analytics = getSupportAnalytics();
+  const ticketStats = getTicketStats();
+  res.json({ ...analytics, ticket_stats: ticketStats });
 });
 
 // ── Start ────────────────────────────────────────────────────────────────────
