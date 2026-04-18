@@ -28,7 +28,18 @@ app.use(express.json());
 
 // ── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, tools: 18, version: '1.0.0' });
+  res.json({
+    ok: true,
+    tools: 49,
+    version: '1.1.0',
+    endpoints: {
+      chat: ['/api/chat', '/api/summarise-transactions'],
+      support_agent: ['/api/support/chat', '/api/support/tickets', '/api/support/analytics', '/api/support/sessions/:id'],
+      kyc_agent: ['/api/kyc-agent/run', '/api/kyc-agent/runs', '/api/kyc-agent/escalations', '/api/kyc-agent/notifications/:userId', '/api/kyc-agent/audit/:runId'],
+      kyc_alerts: ['/api/kyc-alerts/preview', '/api/kyc-alerts/run'],
+      wallet: ['/api/wallet/validate-load', '/api/wallet/load-guard-log', '/api/wallet/sub-wallets/:userId', '/api/wallet/sub-wallets/load', '/api/wallet/sub-wallets/spend', '/api/wallet/sub-wallets/eligibility', '/api/wallet/benefits/utilisation'],
+    },
+  });
 });
 
 // ── POST /api/chat ───────────────────────────────────────────────────────────
