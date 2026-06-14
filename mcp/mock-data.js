@@ -614,7 +614,7 @@ const alertThresholds = new Map([
 const employers = new Map([
   ['employer_001', {
     employer_id: 'employer_001',
-    name: 'Paytm',
+    name: 'Acme Corp',
     allowed_types: ['FOOD', 'NCMC TRANSIT', 'FUEL'],
   }],
   ['employer_002', {
@@ -656,7 +656,7 @@ subWalletStore.set('user_001', [
       { txn_id: 'SWTXN-F002', amount_paise: 25000, type: 'debit', merchant: 'Zomato', merchant_category: 'Food & Dining', description: 'Zomato dinner order', timestamp: daysAgoISO(1), status: 'success' },
       { txn_id: 'SWTXN-F003', amount_paise: 8000, type: 'debit', merchant: 'Starbucks', merchant_category: 'Food & Dining', description: 'Starbucks coffee', timestamp: daysAgoISO(2), status: 'success' },
       { txn_id: 'SWTXN-F004', amount_paise: 12000, type: 'debit', merchant: 'Dominos', merchant_category: 'Food & Dining', description: 'Dominos pizza', timestamp: daysAgoISO(3), status: 'success' },
-      { txn_id: 'SWTXN-F005', amount_paise: 300000, type: 'credit', merchant: 'Paytm', merchant_category: 'Employer Benefit Load', description: 'FOOD benefit - Monthly Benefits', timestamp: daysAgoISO(5), status: 'success' },
+      { txn_id: 'SWTXN-F005', amount_paise: 300000, type: 'credit', merchant: 'Platform', merchant_category: 'Employer Benefit Load', description: 'FOOD benefit - Monthly Benefits', timestamp: daysAgoISO(5), status: 'success' },
     ],
   },
   {
@@ -672,7 +672,7 @@ subWalletStore.set('user_001', [
       { txn_id: 'SWTXN-T001', amount_paise: 6000, type: 'debit', merchant: 'Mumbai Metro', merchant_category: 'Transit', description: 'Metro ride - Andheri to BKC', timestamp: daysAgoISO(0), status: 'success' },
       { txn_id: 'SWTXN-T002', amount_paise: 4000, type: 'debit', merchant: 'BEST Bus', merchant_category: 'Transit', description: 'Bus ticket', timestamp: daysAgoISO(1), status: 'success' },
       { txn_id: 'SWTXN-T003', amount_paise: 10000, type: 'debit', merchant: 'Mumbai Metro', merchant_category: 'Transit', description: 'Metro monthly pass', timestamp: daysAgoISO(3), status: 'success' },
-      { txn_id: 'SWTXN-T004', amount_paise: 200000, type: 'credit', merchant: 'Paytm', merchant_category: 'Employer Benefit Load', description: 'NCMC TRANSIT benefit - Monthly Benefits', timestamp: daysAgoISO(5), status: 'success' },
+      { txn_id: 'SWTXN-T004', amount_paise: 200000, type: 'credit', merchant: 'Platform', merchant_category: 'Employer Benefit Load', description: 'NCMC TRANSIT benefit - Monthly Benefits', timestamp: daysAgoISO(5), status: 'success' },
     ],
   },
   {
@@ -687,7 +687,7 @@ subWalletStore.set('user_001', [
     transactions: [
       { txn_id: 'SWTXN-FT01', amount_paise: 15000, type: 'debit', merchant: 'NHAI Toll', merchant_category: 'Toll', description: 'Mumbai-Pune Expressway toll', timestamp: daysAgoISO(1), status: 'success' },
       { txn_id: 'SWTXN-FT02', amount_paise: 10000, type: 'debit', merchant: 'NHAI Toll', merchant_category: 'Toll', description: 'Bandra-Worli Sea Link toll', timestamp: daysAgoISO(4), status: 'success' },
-      { txn_id: 'SWTXN-FT03', amount_paise: 100000, type: 'credit', merchant: 'Paytm', merchant_category: 'Employer Benefit Load', description: 'FASTAG benefit load', timestamp: daysAgoISO(10), status: 'success' },
+      { txn_id: 'SWTXN-FT03', amount_paise: 100000, type: 'credit', merchant: 'Platform', merchant_category: 'Employer Benefit Load', description: 'FASTAG benefit load', timestamp: daysAgoISO(10), status: 'success' },
     ],
   },
   {
@@ -700,7 +700,7 @@ subWalletStore.set('user_001', [
     last_loaded_at: daysAgoISO(30),
     expiry_date: daysFromNowISO(335),
     transactions: [
-      { txn_id: 'SWTXN-G001', amount_paise: 200000, type: 'credit', merchant: 'Paytm', merchant_category: 'Employer Benefit Load', description: 'GIFT benefit - Diwali Bonus', timestamp: daysAgoISO(30), status: 'success' },
+      { txn_id: 'SWTXN-G001', amount_paise: 200000, type: 'credit', merchant: 'Platform', merchant_category: 'Employer Benefit Load', description: 'GIFT benefit - Diwali Bonus', timestamp: daysAgoISO(30), status: 'success' },
     ],
   },
   {
@@ -715,7 +715,7 @@ subWalletStore.set('user_001', [
     transactions: [
       { txn_id: 'SWTXN-FL01', amount_paise: 50000, type: 'debit', merchant: 'HP Petrol', merchant_category: 'Fuel', description: 'HP Petrol - Fuel refill', timestamp: daysAgoISO(0), status: 'success' },
       { txn_id: 'SWTXN-FL02', amount_paise: 35000, type: 'debit', merchant: 'IOCL', merchant_category: 'Fuel', description: 'Indian Oil - Diesel', timestamp: daysAgoISO(2), status: 'success' },
-      { txn_id: 'SWTXN-FL03', amount_paise: 250000, type: 'credit', merchant: 'Paytm', merchant_category: 'Employer Benefit Load', description: 'FUEL benefit - Monthly Benefits', timestamp: daysAgoISO(3), status: 'success' },
+      { txn_id: 'SWTXN-FL03', amount_paise: 250000, type: 'credit', merchant: 'Platform', merchant_category: 'Employer Benefit Load', description: 'FUEL benefit - Monthly Benefits', timestamp: daysAgoISO(3), status: 'success' },
     ],
   },
 ]);
